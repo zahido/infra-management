@@ -1,0 +1,67 @@
+# ===============================
+# Node / Package managers
+# ===============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ===============================
+# Build outputs
+# ===============================
+.next/
+out/
+dist/
+build/
+
+# ===============================
+# Environment files
+# ===============================
+.env
+.env.local
+.env.development.local
+.env.production.local
+.env.test.local
+
+# ===============================
+# Logs
+# ===============================
+logs/
+*.log
+
+# ===============================
+# OS / Editor junk
+# ===============================
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+
+# ===============================
+# Docker
+# ===============================
+.dockerignore
+docker-compose.override.yml
+
+# ===============================
+# Next.js cache
+# ===============================
+.next/cache/
+
+# ===============================
+# Coverage
+# ===============================
+coverage/
+
+# ===============================
+# TypeScript
+# ===============================
+*.tsbuildinfo
+
+# ===============================
+# Misc
+# ===============================
+.cache/
+.tmp/

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"net/http"
+	"strconv"
 	"time"
 
 	"server-management/internal/database"
@@ -37,18 +38,25 @@ func CreateServer(c *gin.Context) {
 
 func GetServers(c *gin.Context) {
 	collection := database.DB.Collection("servers")
-	
+
 	// Get query parameters for pagination
 	page := c.DefaultQuery("page", "1")
 	limit := c.DefaultQuery("limit", "10")
-	
+
 	// Convert to int64
-	pageInt := int64(1)
-	limitInt := int64(10)
-	
+	pageInt, err := strconv.ParseInt(page, 10, 64)
+	if err != nil || pageInt < 1 {
+		pageInt = 1
+	}
+
+	limitInt, err := strconv.ParseInt(limit, 10, 64)
+	if err != nil || limitInt < 1 {
+		limitInt = 10
+	}
+
 	// Calculate skip
 	skip := (pageInt - 1) * limitInt
-	
+
 	// Find options
 	findOptions := options.Find()
 	findOptions.SetLimit(limitInt)
@@ -120,7 +128,7 @@ func UpdateServer(c *gin.Context) {
 
 	collection := database.DB.Collection("servers")
 	update := bson.M{"$set": server}
-	
+
 	result, err := collection.UpdateOne(context.Background(), bson.M{"_id": objectID}, update)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update server"})
