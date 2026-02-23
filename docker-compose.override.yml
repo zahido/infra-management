@@ -1,0 +1,19 @@
+services:
+  frontend:
+    build:
+      context: ./frontend
+      target: development
+    volumes:
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/package.json:/app/package.json:ro
+      - ./frontend/next.config.js:/app/next.config.js:ro
+      - ./frontend/tailwind.config.js:/app/tailwind.config.js:ro
+      - ./frontend/tsconfig.json:/app/tsconfig.json:ro
+      - ./frontend/postcss.config.js:/app/postcss.config.js:ro
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - NEXT_TELEMETRY_DISABLED=1
+      - HOST=0.0.0.0
+    command: npm run dev
