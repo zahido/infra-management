@@ -27,6 +27,8 @@ services:
       - MONGODB_URI=mongodb://${MONGO_USERNAME}:${MONGO_PASSWORD}@mongodb:27017/servermgmt?authSource=admin
       - JWT_SECRET=${JWT_SECRET}
       - PORT=8080
+      - APP_ENV=production
+      - ALLOWED_ORIGINS=http://${SERVER_IP}
     depends_on:
       mongodb:
         condition: service_healthy
