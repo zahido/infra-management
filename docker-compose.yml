@@ -37,10 +37,10 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        - NEXT_PUBLIC_API_URL=http://${SERVER_IP}:8080
     container_name: server-mgmt-frontend
     restart: unless-stopped
+    environment:
+      - NEXT_PUBLIC_API_URL=http://backend:8080
     depends_on:
       - backend
     networks:
