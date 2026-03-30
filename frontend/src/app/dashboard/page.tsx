@@ -8,7 +8,7 @@ import api from '@/lib/api'
 import toast from 'react-hot-toast'
 import {
   PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon,
-  MagnifyingGlassIcon, CurrencyDollarIcon, CpuChipIcon, ServerStackIcon,
+  MagnifyingGlassIcon, CurrencyDollarIcon, CpuChipIcon, ServerStackIcon, XMarkIcon,
 } from '@heroicons/react/24/outline'
 
 interface Server {
@@ -580,9 +580,18 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
       <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
         <div className="mt-3">
-          <h3 className="text-lg font-medium text-gray-900 mb-4">
-            {server ? 'Edit Server' : 'Add New Server'}
-          </h3>
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-lg font-medium text-gray-900">
+              {server ? 'Edit Server' : 'Add New Server'}
+            </h3>
+            <button
+              type="button"
+              onClick={onClose}
+              className="text-gray-400 hover:text-gray-600 transition-colors"
+            >
+              <XMarkIcon className="h-5 w-5" />
+            </button>
+          </div>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
