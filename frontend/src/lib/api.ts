@@ -29,10 +29,10 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    if (error.response?.status === 401 && typeof window !== 'undefined' && window.location.pathname !== '/login') {
       removeAuthToken()
-      window.location.href = '/login'
       toast.error('Session expired. Please login again.')
+      window.location.href = '/login'
     }
     return Promise.reject(error)
   }
