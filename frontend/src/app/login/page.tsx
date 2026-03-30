@@ -7,7 +7,7 @@ import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { setAuthToken, setUserData } from '@/lib/auth'
 import { motion, AnimatePresence, useMotionValue, useSpring } from 'framer-motion'
-import { User, Lock, Eye, EyeOff, LogIn, ArrowRight, Github, Chrome } from 'lucide-react'
+import { User, Lock, Eye, EyeOff, LogIn, ArrowRight } from 'lucide-react'
 
 interface LoginForm {
   username: string
@@ -173,38 +173,6 @@ export default function Login() {
               </motion.button>
             </form>
 
-            <div className="relative">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-white/10"></div>
-              </div>
-              <div className="relative flex justify-center text-xs uppercase">
-                <span className="bg-[#0f172a] px-4 text-slate-500 font-bold tracking-widest">Or continue with</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <button className="flex items-center justify-center gap-2 py-3 px-4 bg-white/5 border border-white/10 rounded-2xl text-slate-300 hover:bg-white/10 hover:text-white transition-all text-sm font-semibold">
-                <Chrome className="w-4 h-4 text-red-400" />
-                Google
-              </button>
-              <button className="flex items-center justify-center gap-2 py-3 px-4 bg-white/5 border border-white/10 rounded-2xl text-slate-300 hover:bg-white/10 hover:text-white transition-all text-sm font-semibold">
-                <Github className="w-4 h-4" />
-                GitHub
-              </button>
-            </div>
-
-            <div className="text-center">
-              <p className="text-sm text-slate-400 font-medium">
-                New to the platform?{' '}
-                <button
-                  type="button"
-                  onClick={() => router.push('/register')}
-                  className="font-bold text-blue-400 hover:text-blue-300 transition-colors underline-offset-8 hover:underline decoration-2"
-                >
-                  Create account
-                </button>
-              </p>
-            </div>
           </div>
         </div>
       </motion.div>

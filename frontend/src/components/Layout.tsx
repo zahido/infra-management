@@ -1,6 +1,6 @@
 'use client'
 
-import { ReactNode } from 'react'
+import { ReactNode, useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { getUserData, removeAuthToken } from '@/lib/auth'
 import toast from 'react-hot-toast'
@@ -11,7 +11,11 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const router = useRouter()
-  const user = getUserData()
+  const [user, setUser] = useState<any>(null)
+
+  useEffect(() => {
+    setUser(getUserData())
+  }, [])
 
   const handleLogout = () => {
     removeAuthToken()
