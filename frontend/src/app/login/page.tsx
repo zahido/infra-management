@@ -17,6 +17,7 @@ interface LoginForm {
 export default function Login() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [apiError, setApiError] = useState<string | null>(null)
   const router = useRouter()
   const { register, handleSubmit, formState: { errors } } = useForm<LoginForm>()
 
@@ -37,6 +38,7 @@ export default function Login() {
 
   const onSubmit = async (data: LoginForm) => {
     setIsLoading(true)
+    setApiError(null)
     try {
       const response = await api.post('/api/auth/login', data)
       const { token, user } = response.data
@@ -47,7 +49,8 @@ export default function Login() {
       toast.success('Welcome back!')
       router.push('/dashboard')
     } catch (error: any) {
-      toast.error(error.response?.data?.error || 'Login failed. Please check your credentials.')
+      const message = error.response?.data?.error || 'Login failed. Please check your credentials.'
+      setApiError(message)
     } finally {
       setIsLoading(false)
     }
@@ -93,6 +96,23 @@ export default function Login() {
 
           <div className="space-y-6">
             <form className="space-y-5" onSubmit={handleSubmit(onSubmit)}>
+              <AnimatePresence>
+                {apiError && (
+                  <motion.div
+                    key="api-error"
+                    initial={{ opacity: 0, y: -8, scale: 0.97 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.97 }}
+                    transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+                    className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-400 text-sm font-medium"
+                  >
+                    <svg className="w-4 h-4 mt-0.5 shrink-0 text-red-400" fill="currentColor" viewBox="0 0 20 20">
+                      <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+                    </svg>
+                    {apiError}
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <div className="space-y-4">
                 {/* Username */}
                 <div className="space-y-2">
@@ -106,6 +126,7 @@ export default function Login() {
                     <input
                       {...register('username', { required: 'Username is required' })}
                       type="text"
+                      autoComplete="off"
                       className="block w-full pl-11 pr-4 py-3.5 bg-white/[0.03] border border-white/10 rounded-2xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:bg-white/[0.05] transition-all sm:text-sm"
                       placeholder="john_doe"
                     />
@@ -129,6 +150,7 @@ export default function Login() {
                     <input
                       {...register('password', { required: 'Password is required' })}
                       type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
                       className="block w-full pl-11 pr-12 py-3.5 bg-white/[0.03] border border-white/10 rounded-2xl text-white placeholder-slate-600 focus:outline-none focus:ring-2 focus:ring-blue-500/40 focus:bg-white/[0.05] transition-all sm:text-sm"
                       placeholder="••••••••"
                     />

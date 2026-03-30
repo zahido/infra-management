@@ -650,7 +650,7 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Username</label>
-                <input type="text" name="username" value={formData.username} onChange={handleChange} required
+                <input type="text" name="username" value={formData.username} onChange={handleChange} required autoComplete="off"
                   className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
               </div>
               <div>
@@ -662,6 +662,7 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
                     value={formData.password}
                     onChange={handleChange}
                     required
+                    autoComplete="new-password"
                     className="block w-full border border-gray-300 rounded-md px-3 py-2 pr-10 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
                   />
                   <button
