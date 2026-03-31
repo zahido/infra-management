@@ -199,12 +199,12 @@ export default function Login() {
           </div>
 
           {/* Register link */}
-          <p className="text-center text-sm text-slate-500">
+          {/* <p className="text-center text-sm text-slate-500">
             Don&apos;t have an account?{' '}
             <Link href="/register" className="text-blue-400 hover:text-blue-300 font-semibold transition-colors">
               Create one
             </Link>
-          </p>
+          </p> */}
         </div>
       </motion.div>
     </div>
