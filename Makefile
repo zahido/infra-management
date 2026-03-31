@@ -41,3 +41,7 @@ clean:
 
 mongo:
 	$(COMPOSE) exec mongodb mongosh
+
+build_local:
+	docker compose -f docker-compose.local.yml up -d --build
+

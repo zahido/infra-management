@@ -9,7 +9,7 @@ import toast from 'react-hot-toast'
 import {
   PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon,
   MagnifyingGlassIcon, CurrencyDollarIcon, CpuChipIcon, ServerStackIcon, XMarkIcon,
-  ClipboardDocumentIcon, CheckIcon,
+  ClipboardDocumentIcon, CheckIcon, ExclamationCircleIcon,
 } from '@heroicons/react/24/outline'
 
 interface Server {
@@ -545,6 +545,43 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [copied, setCopied] = useState(false)
+  const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [submitAttempted, setSubmitAttempted] = useState(false)
+
+  const validate = (data: typeof formData) => {
+    const errors: Record<string, string> = {}
+    if (!data.project_name.trim()) errors.project_name = 'Project name is required'
+    if (!data.project_purpose.trim()) errors.project_purpose = 'Project purpose is required'
+    if (!data.environment) errors.environment = 'Please select an environment'
+    if (data.cpu < 1) errors.cpu = 'Must be at least 1 core'
+    if (data.ram < 1) errors.ram = 'Must be at least 1 GB'
+    if (data.storage < 1) errors.storage = 'Must be at least 1 GB'
+    if (data.total_cost < 0) errors.total_cost = 'Cost cannot be negative'
+    if (!data.os_version.trim()) errors.os_version = 'OS version is required'
+    if (!data.ip.trim()) errors.ip = 'IP address is required'
+    else if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(data.ip.trim())) errors.ip = 'Enter a valid IP (e.g. 192.168.1.1)'
+    if (!data.hostname.trim()) errors.hostname = 'Hostname is required'
+    if (!data.username.trim()) errors.username = 'Username is required'
+    if (!data.password.trim()) errors.password = 'Password is required'
+    if (!data.server_no.trim()) errors.server_no = 'Server number is required'
+    if (!data.created_by.trim()) errors.created_by = 'Created by is required'
+    return errors
+  }
+
+  const errors = validate(formData)
+
+  const fieldError = (name: string) =>
+    (touched[name] || submitAttempted) && errors[name] ? errors[name] : null
+
+  const inputClass = (name: string) =>
+    `mt-1 block w-full rounded-lg px-3 py-2.5 text-sm border focus:outline-none focus:ring-2 transition-colors ${
+      fieldError(name)
+        ? 'border-red-400 focus:ring-red-300 bg-red-50 text-red-900 placeholder-red-300'
+        : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 bg-white text-gray-900'
+    }`
+
+  const handleBlur = (name: string) =>
+    setTouched(prev => ({ ...prev, [name]: true }))
 
   const handleCopyCredentials = () => {
     const text = `IP Address: ${formData.ip}\nHostname: ${formData.hostname}\nUsername: ${formData.username}\nPassword: ${formData.password}`
@@ -555,9 +592,12 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
   }
 
   const vmName = buildVmName(formData)
+  const isEditMode = !!server
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setSubmitAttempted(true)
+    if (Object.keys(validate(formData)).length > 0) return
     setLoading(true)
     try {
       const payload = { ...formData, vm_name: vmName }
@@ -587,157 +627,369 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
   }
 
   return (
-    <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
-      <div className="relative top-20 mx-auto p-5 border w-11/12 max-w-4xl shadow-lg rounded-md bg-white">
-        <div className="mt-3">
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-lg font-medium text-gray-900">
-              {server ? 'Edit Server' : 'Add New Server'}
-            </h3>
+    <div className="fixed inset-0 bg-black/50 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-start justify-center py-8 px-4">
+      <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden">
+
+        {/* Modal Header */}
+        <div className={`px-6 py-5 ${isEditMode ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-gradient-to-r from-blue-600 to-indigo-600'}`}>
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-white/20 rounded-lg">
+                <ServerStackIcon className="h-5 w-5 text-white" />
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-white leading-tight">
+                  {isEditMode ? 'Edit Server' : 'Add New Server'}
+                </h3>
+                <p className="text-xs text-white/70 mt-0.5">
+                  {isEditMode
+                    ? `Updating configuration for: ${server.vm_name}`
+                    : 'Fill in the details to register a new server'}
+                </p>
+              </div>
+            </div>
             <button
               type="button"
               onClick={onClose}
-              className="text-gray-400 hover:text-gray-600 transition-colors"
+              className="p-1.5 rounded-lg bg-white/15 hover:bg-white/30 text-white transition-colors"
             >
               <XMarkIcon className="h-5 w-5" />
             </button>
           </div>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Project Name</label>
-                <input type="text" name="project_name" value={formData.project_name} onChange={handleChange} required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+        </div>
+
+        {/* Form Body */}
+        <form onSubmit={handleSubmit} noValidate>
+          <div className="px-6 py-6 space-y-7 max-h-[68vh] overflow-y-auto">
+
+            {/* ── Section: Project Information ── */}
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="h-4 w-1 rounded-full bg-blue-600 inline-block" />
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Project Information</h4>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Project Purpose</label>
-                <input type="text" name="project_purpose" value={formData.project_purpose} onChange={handleChange} required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Environment</label>
-                <select name="environment" value={formData.environment} onChange={handleChange} required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500">
-                  <option value="">Select Environment</option>
-                  <option value="Development">Development</option>
-                  <option value="Staging">Staging</option>
-                  <option value="Production">Production</option>
-                </select>
-              </div>
-              <div className="md:col-span-2">
-                <label className="block text-sm font-medium text-gray-700">
-                  VM Name <span className="text-xs font-normal text-gray-400">(auto-generated)</span>
-                </label>
-                <div className="mt-1 block w-full border border-gray-200 bg-gray-50 rounded-md px-3 py-2 text-sm text-gray-700 font-mono break-all select-all">
-                  {vmName || <span className="text-gray-400 italic">Fill in the fields above to generate</span>}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Project Name <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" name="project_name" value={formData.project_name}
+                    onChange={handleChange} onBlur={() => handleBlur('project_name')}
+                    placeholder="e.g. My Web App"
+                    className={inputClass('project_name')} />
+                  {fieldError('project_name') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('project_name')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Project Purpose <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" name="project_purpose" value={formData.project_purpose}
+                    onChange={handleChange} onBlur={() => handleBlur('project_purpose')}
+                    placeholder="e.g. Backend API"
+                    className={inputClass('project_purpose')} />
+                  {fieldError('project_purpose') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('project_purpose')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Environment <span className="text-red-500">*</span>
+                  </label>
+                  <select name="environment" value={formData.environment}
+                    onChange={handleChange} onBlur={() => handleBlur('environment')}
+                    className={inputClass('environment')}>
+                    <option value="">Select Environment</option>
+                    <option value="Development">Development</option>
+                    <option value="Staging">Staging</option>
+                    <option value="Production">Production</option>
+                  </select>
+                  {fieldError('environment') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('environment')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    VM Name <span className="text-xs font-normal text-gray-400">(auto-generated)</span>
+                  </label>
+                  <div className="mt-1 w-full border border-dashed border-gray-300 bg-gray-50 rounded-lg px-3 py-2.5 text-sm text-gray-600 font-mono break-all select-all min-h-[42px]">
+                    {vmName || <span className="text-gray-400 italic text-xs">Fill in fields above to generate</span>}
+                  </div>
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">CPU (cores)</label>
-                <input type="number" name="cpu" value={formData.cpu} onChange={handleChange} required min="1"
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+            </div>
+
+            <div className="border-t border-gray-100" />
+
+            {/* ── Section: Server Resources ── */}
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <span className="h-4 w-1 rounded-full bg-indigo-500 inline-block" />
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Server Resources</h4>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">RAM (GB)</label>
-                <input type="number" name="ram" value={formData.ram} onChange={handleChange} required min="1"
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Storage (GB)</label>
-                <input type="number" name="storage" value={formData.storage} onChange={handleChange} required min="1"
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Total Cost ($)</label>
-                <input type="number" name="total_cost" value={formData.total_cost} onChange={handleChange} required min="0" step="0.01"
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">OS Version</label>
-                <input type="text" name="os_version" value={formData.os_version} onChange={handleChange} required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">IP Address</label>
-                <input type="text" name="ip" value={formData.ip} onChange={handleChange} required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Hostname</label>
-                <input type="text" name="hostname" value={formData.hostname} onChange={handleChange} required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Username</label>
-                <input type="text" name="username" value={formData.username} onChange={handleChange} required autoComplete="off"
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Password</label>
-                <div className="relative mt-1">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    name="password"
-                    value={formData.password}
-                    onChange={handleChange}
-                    required
-                    autoComplete="new-password"
-                    className="block w-full border border-gray-300 rounded-md px-3 py-2 pr-10 focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
-                  >
-                    {showPassword ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
-                  </button>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    CPU (cores) <span className="text-red-500">*</span>
+                  </label>
+                  <input type="number" name="cpu" value={formData.cpu}
+                    onChange={handleChange} onBlur={() => handleBlur('cpu')} min="1"
+                    className={inputClass('cpu')} />
+                  {fieldError('cpu') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('cpu')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    RAM (GB) <span className="text-red-500">*</span>
+                  </label>
+                  <input type="number" name="ram" value={formData.ram}
+                    onChange={handleChange} onBlur={() => handleBlur('ram')} min="1"
+                    className={inputClass('ram')} />
+                  {fieldError('ram') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('ram')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Storage (GB) <span className="text-red-500">*</span>
+                  </label>
+                  <input type="number" name="storage" value={formData.storage}
+                    onChange={handleChange} onBlur={() => handleBlur('storage')} min="1"
+                    className={inputClass('storage')} />
+                  {fieldError('storage') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('storage')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Total Cost ($) <span className="text-red-500">*</span>
+                  </label>
+                  <input type="number" name="total_cost" value={formData.total_cost}
+                    onChange={handleChange} onBlur={() => handleBlur('total_cost')} min="0" step="0.01"
+                    className={inputClass('total_cost')} />
+                  {fieldError('total_cost') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('total_cost')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    OS Version <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" name="os_version" value={formData.os_version}
+                    onChange={handleChange} onBlur={() => handleBlur('os_version')}
+                    placeholder="e.g. Ubuntu 22.04"
+                    className={inputClass('os_version')} />
+                  {fieldError('os_version') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('os_version')}
+                    </p>
+                  )}
                 </div>
               </div>
-              <div className="md:col-span-2 flex justify-end">
+            </div>
+
+            <div className="border-t border-gray-100" />
+
+            {/* ── Section: Network & Access ── */}
+            <div>
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <span className="h-4 w-1 rounded-full bg-emerald-500 inline-block" />
+                  <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Network & Access</h4>
+                </div>
                 <button
                   type="button"
                   onClick={handleCopyCredentials}
-                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border transition-colors ${
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
                     copied
                       ? 'bg-green-50 border-green-300 text-green-700'
-                      : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
+                      : 'bg-gray-50 border-gray-200 text-gray-600 hover:bg-gray-100 hover:border-gray-300'
                   }`}
                 >
-                  {copied ? (
-                    <><CheckIcon className="h-4 w-4" /> Copied!</>
-                  ) : (
-                    <><ClipboardDocumentIcon className="h-4 w-4" /> Copy Credentials</>
-                  )}
+                  {copied
+                    ? <><CheckIcon className="h-3.5 w-3.5" /> Copied!</>
+                    : <><ClipboardDocumentIcon className="h-3.5 w-3.5" /> Copy Credentials</>}
                 </button>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Server No</label>
-                <input type="text" name="server_no" value={formData.server_no} onChange={handleChange} required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700">Created By</label>
-                <input type="text" name="created_by" value={formData.created_by} onChange={handleChange} required
-                  className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    IP Address <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" name="ip" value={formData.ip}
+                    onChange={handleChange} onBlur={() => handleBlur('ip')}
+                    placeholder="e.g. 192.168.1.100"
+                    className={inputClass('ip')} />
+                  {fieldError('ip') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('ip')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Hostname <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" name="hostname" value={formData.hostname}
+                    onChange={handleChange} onBlur={() => handleBlur('hostname')}
+                    placeholder="e.g. server01.example.com"
+                    className={inputClass('hostname')} />
+                  {fieldError('hostname') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('hostname')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Username <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" name="username" value={formData.username}
+                    onChange={handleChange} onBlur={() => handleBlur('username')}
+                    placeholder="e.g. admin" autoComplete="off"
+                    className={inputClass('username')} />
+                  {fieldError('username') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('username')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Password <span className="text-red-500">*</span>
+                  </label>
+                  <div className="relative mt-1">
+                    <input
+                      type={showPassword ? 'text' : 'password'}
+                      name="password"
+                      value={formData.password}
+                      onChange={handleChange}
+                      onBlur={() => handleBlur('password')}
+                      autoComplete="new-password"
+                      placeholder="Enter password"
+                      className={`block w-full rounded-lg px-3 py-2.5 text-sm border pr-10 focus:outline-none focus:ring-2 transition-colors ${
+                        fieldError('password')
+                          ? 'border-red-400 focus:ring-red-300 bg-red-50'
+                          : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 bg-white'
+                      }`}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400 hover:text-gray-600"
+                    >
+                      {showPassword ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  {fieldError('password') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('password')}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
+
+            <div className="border-t border-gray-100" />
+
+            {/* ── Section: Additional Info ── */}
             <div>
-              <label className="block text-sm font-medium text-gray-700">Remarks</label>
-              <textarea name="remarks" value={formData.remarks} onChange={handleChange} rows={3}
-                className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-blue-500 focus:border-blue-500" />
+              <div className="flex items-center gap-2 mb-4">
+                <span className="h-4 w-1 rounded-full bg-purple-500 inline-block" />
+                <h4 className="text-xs font-bold text-gray-500 uppercase tracking-widest">Additional Info</h4>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Server No <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" name="server_no" value={formData.server_no}
+                    onChange={handleChange} onBlur={() => handleBlur('server_no')}
+                    placeholder="e.g. SRV-001"
+                    className={inputClass('server_no')} />
+                  {fieldError('server_no') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('server_no')}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Created By <span className="text-red-500">*</span>
+                  </label>
+                  <input type="text" name="created_by" value={formData.created_by}
+                    onChange={handleChange} onBlur={() => handleBlur('created_by')}
+                    placeholder="e.g. John Doe"
+                    className={inputClass('created_by')} />
+                  {fieldError('created_by') && (
+                    <p className="mt-1.5 text-xs text-red-500 flex items-center gap-1">
+                      <ExclamationCircleIcon className="h-3.5 w-3.5 shrink-0" />{fieldError('created_by')}
+                    </p>
+                  )}
+                </div>
+                <div className="md:col-span-2">
+                  <label className="block text-sm font-medium text-gray-700">Remarks</label>
+                  <textarea name="remarks" value={formData.remarks} onChange={handleChange} rows={3}
+                    placeholder="Optional notes about this server..."
+                    className="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 bg-white resize-none" />
+                </div>
+              </div>
             </div>
-            <div className="flex justify-end space-x-3 pt-4">
-              <button type="button" onClick={onClose}
-                className="px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+
+          </div>
+
+          {/* Modal Footer */}
+          <div className="px-6 py-4 bg-gray-50 border-t border-gray-200 flex items-center justify-between">
+            <p className="text-xs text-gray-400">
+              Fields marked <span className="text-red-500 font-medium">*</span> are required
+            </p>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 transition-colors"
+              >
                 Cancel
               </button>
-              <button type="submit" disabled={loading}
-                className="px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50">
-                {loading ? 'Saving...' : 'Save'}
+              <button
+                type="submit"
+                disabled={loading}
+                className={`px-5 py-2 rounded-lg text-sm font-semibold text-white shadow-sm transition-all disabled:opacity-50 inline-flex items-center gap-2 ${
+                  isEditMode
+                    ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
+                    : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
+                }`}
+              >
+                {loading ? (
+                  <>
+                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                    </svg>
+                    Saving...
+                  </>
+                ) : isEditMode ? 'Update Server' : 'Add Server'}
               </button>
             </div>
-          </form>
-        </div>
+          </div>
+        </form>
+
       </div>
     </div>
   )
