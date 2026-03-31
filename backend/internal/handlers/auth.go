@@ -6,6 +6,7 @@ import (
 	"os"
 	"time"
 
+	"server-management/internal/audit"
 	"server-management/internal/database"
 	"server-management/internal/models"
 
@@ -23,7 +24,6 @@ func Register(c *gin.Context) {
 		return
 	}
 
-	// Check if user already exists
 	collection := database.DB.Collection("users")
 	var existingUser models.User
 	err := collection.FindOne(context.Background(), bson.M{
@@ -34,11 +34,19 @@ func Register(c *gin.Context) {
 	}).Decode(&existingUser)
 
 	if err == nil {
+		audit.Log(audit.Entry{
+			Username:  user.Username,
+			Action:    models.ActionRegister,
+			Resource:  models.ResourceAuth,
+			Details:   bson.M{"reason": "username or email already exists"},
+			IPAddress: clientIP(c),
+			UserAgent: c.GetHeader("User-Agent"),
+			Status:    models.AuditStatusFailure,
+		})
 		c.JSON(http.StatusConflict, gin.H{"error": "User already exists"})
 		return
 	}
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
@@ -57,7 +65,19 @@ func Register(c *gin.Context) {
 	}
 
 	user.ID = result.InsertedID.(primitive.ObjectID)
-	user.Password = "" // Don't return password
+	user.Password = ""
+
+	audit.Log(audit.Entry{
+		UserID:     user.ID.Hex(),
+		Username:   user.Username,
+		Action:     models.ActionRegister,
+		Resource:   models.ResourceAuth,
+		ResourceID: user.ID.Hex(),
+		Details:    bson.M{"email": user.Email, "role": user.Role},
+		IPAddress:  clientIP(c),
+		UserAgent:  c.GetHeader("User-Agent"),
+		Status:     models.AuditStatusSuccess,
+	})
 
 	c.JSON(http.StatusCreated, gin.H{"message": "User created successfully", "user": user})
 }
@@ -73,18 +93,34 @@ func Login(c *gin.Context) {
 	var user models.User
 	err := collection.FindOne(context.Background(), bson.M{"username": loginReq.Username}).Decode(&user)
 	if err != nil {
+		audit.Log(audit.Entry{
+			Username:  loginReq.Username,
+			Action:    models.ActionLoginFailed,
+			Resource:  models.ResourceAuth,
+			Details:   bson.M{"reason": "user not found"},
+			IPAddress: clientIP(c),
+			UserAgent: c.GetHeader("User-Agent"),
+			Status:    models.AuditStatusFailure,
+		})
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
-	// Check password
-	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(loginReq.Password))
-	if err != nil {
+	if err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(loginReq.Password)); err != nil {
+		audit.Log(audit.Entry{
+			UserID:    user.ID.Hex(),
+			Username:  user.Username,
+			Action:    models.ActionLoginFailed,
+			Resource:  models.ResourceAuth,
+			Details:   bson.M{"reason": "wrong password"},
+			IPAddress: clientIP(c),
+			UserAgent: c.GetHeader("User-Agent"),
+			Status:    models.AuditStatusFailure,
+		})
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 		return
 	}
 
-	// Generate JWT token
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
 		jwtSecret = "your-super-secret-jwt-key-change-in-production"
@@ -102,9 +138,26 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	user.Password = "" // Don't return password
+	audit.Log(audit.Entry{
+		UserID:    user.ID.Hex(),
+		Username:  user.Username,
+		Action:    models.ActionLogin,
+		Resource:  models.ResourceAuth,
+		Details:   bson.M{"role": user.Role},
+		IPAddress: clientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		Status:    models.AuditStatusSuccess,
+	})
+
+	user.Password = ""
 	c.JSON(http.StatusOK, models.LoginResponse{
 		Token: tokenString,
 		User:  user,
 	})
+}
+
+// clientIP extracts the real client IP, honouring X-Forwarded-For / X-Real-IP
+// headers set by reverse proxies before falling back to RemoteAddr.
+func clientIP(c *gin.Context) string {
+	return c.ClientIP()
 }

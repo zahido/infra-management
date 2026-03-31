@@ -73,6 +73,13 @@ func main() {
 			servers.PUT("/:id", handlers.UpdateServer)
 			servers.DELETE("/:id", handlers.DeleteServer)
 		}
+
+		// Audit log routes
+		auditRoutes := api.Group("/audit")
+		{
+			auditRoutes.GET("/logs", handlers.GetAuditLogs)
+			auditRoutes.GET("/stats", handlers.GetAuditStats)
+		}
 	}
 
 	// Get port from environment or default to 8080

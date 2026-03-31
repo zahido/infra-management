@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
+import Link from 'next/link'
 import toast from 'react-hot-toast'
 import api from '@/lib/api'
 import { setAuthToken, setUserData } from '@/lib/auth'
@@ -196,6 +197,14 @@ export default function Login() {
             </form>
 
           </div>
+
+          {/* Register link */}
+          <p className="text-center text-sm text-slate-500">
+            Don&apos;t have an account?{' '}
+            <Link href="/register" className="text-blue-400 hover:text-blue-300 font-semibold transition-colors">
+              Create one
+            </Link>
+          </p>
         </div>
       </motion.div>
     </div>

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"server-management/internal/audit"
 	"server-management/internal/database"
 	"server-management/internal/models"
 
@@ -33,35 +34,49 @@ func CreateServer(c *gin.Context) {
 	}
 
 	server.ID = result.InsertedID.(primitive.ObjectID)
+
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionServerCreate,
+		Resource:   models.ResourceServer,
+		ResourceID: server.ID.Hex(),
+		Details: bson.M{
+			"vm_name":      server.VMName,
+			"project_name": server.ProjectName,
+			"environment":  server.Environment,
+			"ip":           server.IP,
+			"cpu":          server.CPU,
+			"ram":          server.RAM,
+			"storage":      server.Storage,
+			"total_cost":   server.TotalCost,
+		},
+		IPAddress: clientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		Status:    models.AuditStatusSuccess,
+	})
+
 	c.JSON(http.StatusCreated, server)
 }
 
 func GetServers(c *gin.Context) {
 	collection := database.DB.Collection("servers")
 
-	// Get query parameters for pagination
-	page := c.DefaultQuery("page", "1")
-	limit := c.DefaultQuery("limit", "10")
-
-	// Convert to int64
-	pageInt, err := strconv.ParseInt(page, 10, 64)
+	pageInt, err := strconv.ParseInt(c.DefaultQuery("page", "1"), 10, 64)
 	if err != nil || pageInt < 1 {
 		pageInt = 1
 	}
-
-	limitInt, err := strconv.ParseInt(limit, 10, 64)
+	limitInt, err := strconv.ParseInt(c.DefaultQuery("limit", "10"), 10, 64)
 	if err != nil || limitInt < 1 {
 		limitInt = 10
 	}
 
-	// Calculate skip
 	skip := (pageInt - 1) * limitInt
 
-	// Find options
 	findOptions := options.Find()
 	findOptions.SetLimit(limitInt)
 	findOptions.SetSkip(skip)
-	findOptions.SetSort(bson.D{{"created_at", -1}})
+	findOptions.SetSort(bson.D{{Key: "created_at", Value: -1}})
 
 	cursor, err := collection.Find(context.Background(), bson.M{}, findOptions)
 	if err != nil {
@@ -76,7 +91,6 @@ func GetServers(c *gin.Context) {
 		return
 	}
 
-	// Get total count
 	total, err := collection.CountDocuments(context.Background(), bson.M{})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count servers"})
@@ -101,8 +115,7 @@ func GetServer(c *gin.Context) {
 
 	collection := database.DB.Collection("servers")
 	var server models.Server
-	err = collection.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&server)
-	if err != nil {
+	if err = collection.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&server); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Server not found"})
 		return
 	}
@@ -118,6 +131,11 @@ func UpdateServer(c *gin.Context) {
 		return
 	}
 
+	// Fetch the existing record so we can include a before-snapshot in the audit.
+	collection := database.DB.Collection("servers")
+	var before models.Server
+	_ = collection.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&before)
+
 	var server models.Server
 	if err := c.ShouldBindJSON(&server); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -126,10 +144,11 @@ func UpdateServer(c *gin.Context) {
 
 	server.UpdatedAt = time.Now()
 
-	collection := database.DB.Collection("servers")
-	update := bson.M{"$set": server}
-
-	result, err := collection.UpdateOne(context.Background(), bson.M{"_id": objectID}, update)
+	result, err := collection.UpdateOne(
+		context.Background(),
+		bson.M{"_id": objectID},
+		bson.M{"$set": server},
+	)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update server"})
 		return
@@ -141,6 +160,40 @@ func UpdateServer(c *gin.Context) {
 	}
 
 	server.ID = objectID
+
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionServerUpdate,
+		Resource:   models.ResourceServer,
+		ResourceID: objectID.Hex(),
+		Details: bson.M{
+			"before": bson.M{
+				"vm_name":      before.VMName,
+				"project_name": before.ProjectName,
+				"environment":  before.Environment,
+				"ip":           before.IP,
+				"cpu":          before.CPU,
+				"ram":          before.RAM,
+				"storage":      before.Storage,
+				"total_cost":   before.TotalCost,
+			},
+			"after": bson.M{
+				"vm_name":      server.VMName,
+				"project_name": server.ProjectName,
+				"environment":  server.Environment,
+				"ip":           server.IP,
+				"cpu":          server.CPU,
+				"ram":          server.RAM,
+				"storage":      server.Storage,
+				"total_cost":   server.TotalCost,
+			},
+		},
+		IPAddress: clientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		Status:    models.AuditStatusSuccess,
+	})
+
 	c.JSON(http.StatusOK, server)
 }
 
@@ -153,6 +206,11 @@ func DeleteServer(c *gin.Context) {
 	}
 
 	collection := database.DB.Collection("servers")
+
+	// Fetch the record before deleting so the audit has full context.
+	var server models.Server
+	_ = collection.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&server)
+
 	result, err := collection.DeleteOne(context.Background(), bson.M{"_id": objectID})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete server"})
@@ -163,6 +221,23 @@ func DeleteServer(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Server not found"})
 		return
 	}
+
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionServerDelete,
+		Resource:   models.ResourceServer,
+		ResourceID: objectID.Hex(),
+		Details: bson.M{
+			"vm_name":      server.VMName,
+			"project_name": server.ProjectName,
+			"environment":  server.Environment,
+			"ip":           server.IP,
+		},
+		IPAddress: clientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		Status:    models.AuditStatusSuccess,
+	})
 
 	c.JSON(http.StatusOK, gin.H{"message": "Server deleted successfully"})
 }

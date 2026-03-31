@@ -64,7 +64,7 @@ export default function Dashboard() {
 
   const fetchServers = async () => {
     try {
-      const response = await api.get('/api/servers')
+      const response = await api.get('/api/servers?limit=10000')
       setServers(response.data.servers || [])
     } catch (error) {
       toast.error('Failed to fetch servers')
