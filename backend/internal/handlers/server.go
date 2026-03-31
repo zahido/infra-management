@@ -70,15 +70,38 @@ func GetServers(c *gin.Context) {
 	if err != nil || limitInt < 1 {
 		limitInt = 10
 	}
+	// Cap at 10000 for report-tab bulk fetches
+	if limitInt > 10000 {
+		limitInt = 10000
+	}
+
+	// Build filter — optional full-text search across key fields
+	filter := bson.M{}
+	if q := c.Query("search"); q != "" {
+		re := bson.M{"$regex": q, "$options": "i"}
+		filter["$or"] = []bson.M{
+			{"project_name": re},
+			{"project_purpose": re},
+			{"environment": re},
+			{"vm_name": re},
+			{"ip": re},
+			{"hostname": re},
+		}
+	}
+
+	total, err := collection.CountDocuments(context.Background(), filter)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count servers"})
+		return
+	}
 
 	skip := (pageInt - 1) * limitInt
+	findOptions := options.Find().
+		SetLimit(limitInt).
+		SetSkip(skip).
+		SetSort(bson.D{{Key: "created_at", Value: -1}})
 
-	findOptions := options.Find()
-	findOptions.SetLimit(limitInt)
-	findOptions.SetSkip(skip)
-	findOptions.SetSort(bson.D{{Key: "created_at", Value: -1}})
-
-	cursor, err := collection.Find(context.Background(), bson.M{}, findOptions)
+	cursor, err := collection.Find(context.Background(), filter, findOptions)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch servers"})
 		return
@@ -90,18 +113,18 @@ func GetServers(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode servers"})
 		return
 	}
-
-	total, err := collection.CountDocuments(context.Background(), bson.M{})
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to count servers"})
-		return
+	if servers == nil {
+		servers = []models.Server{}
 	}
+
+	pages := (total + limitInt - 1) / limitInt
 
 	c.JSON(http.StatusOK, gin.H{
 		"servers": servers,
 		"total":   total,
 		"page":    pageInt,
 		"limit":   limitInt,
+		"pages":   pages,
 	})
 }
 

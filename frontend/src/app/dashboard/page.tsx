@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
 import { isAuthenticated } from '@/lib/auth'
@@ -10,7 +10,7 @@ import {
   PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon,
   MagnifyingGlassIcon, CurrencyDollarIcon, CpuChipIcon, ServerStackIcon, XMarkIcon,
   ClipboardDocumentIcon, CheckIcon, ExclamationCircleIcon, FolderOpenIcon,
-  CircleStackIcon,
+  CircleStackIcon, ChevronLeftIcon, ChevronRightIcon,
 } from '@heroicons/react/24/outline'
 
 interface Server {
@@ -38,39 +38,96 @@ interface Server {
 
 type Tab = 'servers' | 'cost' | 'resources' | 'project-list'
 
+const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
+
 const ENV_STYLES: Record<string, string> = {
   Production: 'bg-red-100 text-red-700 ring-1 ring-red-200',
-  Staging: 'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
-  Development: 'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+  Staging:    'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
+  Development:'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
 }
 const envStyle = (env: string) => ENV_STYLES[env] ?? 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
 
 export default function Dashboard() {
-  const [servers, setServers] = useState<Server[]>([])
-  const [loading, setLoading] = useState(true)
-  const [showModal, setShowModal] = useState(false)
+  // ── All-servers dataset (used by report tabs) ──────────────────────────────
+  const [allServers, setAllServers] = useState<Server[]>([])
+  const [reportsLoading, setReportsLoading] = useState(true)
+
+  // ── Paginated table (All Servers tab) ─────────────────────────────────────
+  const [pagedServers, setPagedServers]   = useState<Server[]>([])
+  const [page, setPage]                   = useState(1)
+  const [pageLimit, setPageLimit]         = useState<10 | 20 | 50>(10)
+  const [totalCount, setTotalCount]       = useState(0)
+  const [totalPages, setTotalPages]       = useState(0)
+  const [tableLoading, setTableLoading]   = useState(true)
+
+  // ── Search (debounced, server-side) ───────────────────────────────────────
+  const [searchInput, setSearchInput] = useState('')
+  const [search, setSearch]           = useState('') // debounced value
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleSearchChange = (val: string) => {
+    setSearchInput(val)
+    if (debounceRef.current) clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      setSearch(val)
+      setPage(1)          // reset to first page on new search
+    }, 400)
+  }
+
+  // ── UI state ──────────────────────────────────────────────────────────────
+  const [showModal, setShowModal]         = useState(false)
   const [editingServer, setEditingServer] = useState<Server | null>(null)
-  const [activeTab, setActiveTab] = useState<Tab>('servers')
-  const [search, setSearch] = useState('')
+  const [activeTab, setActiveTab]         = useState<Tab>('servers')
   const router = useRouter()
 
-  useEffect(() => {
-    if (!isAuthenticated()) {
-      router.push('/login')
-      return
-    }
-    fetchServers()
-  }, [router])
-
-  const fetchServers = async () => {
+  // ── Fetch all servers for report tabs (one-shot) ──────────────────────────
+  const fetchAllServers = useCallback(async () => {
     try {
-      const response = await api.get('/api/servers?limit=10000')
-      setServers(response.data.servers || [])
-    } catch (error) {
+      const res = await api.get('/api/servers?limit=10000')
+      setAllServers(res.data.servers || [])
+    } catch {
+      toast.error('Failed to load server data')
+    } finally {
+      setReportsLoading(false)
+    }
+  }, [])
+
+  // ── Fetch one page (All Servers tab) ──────────────────────────────────────
+  const fetchPagedServers = useCallback(async (p: number, limit: number, q: string) => {
+    setTableLoading(true)
+    try {
+      const params = new URLSearchParams({
+        page:  String(p),
+        limit: String(limit),
+      })
+      if (q.trim()) params.set('search', q.trim())
+
+      const res = await api.get(`/api/servers?${params.toString()}`)
+      setPagedServers(res.data.servers || [])
+      setTotalCount(res.data.total  || 0)
+      setTotalPages(res.data.pages  || 0)
+    } catch {
       toast.error('Failed to fetch servers')
     } finally {
-      setLoading(false)
+      setTableLoading(false)
     }
+  }, [])
+
+  // ── Init ──────────────────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!isAuthenticated()) { router.push('/login'); return }
+    fetchAllServers()
+  }, [router, fetchAllServers])
+
+  // Re-fetch paged data whenever page / limit / search changes
+  useEffect(() => {
+    fetchPagedServers(page, pageLimit, search)
+  }, [page, pageLimit, search, fetchPagedServers])
+
+  // ── CRUD helpers ──────────────────────────────────────────────────────────
+  const refreshAll = () => {
+    fetchAllServers()
+    fetchPagedServers(page, pageLimit, search)
   }
 
   const handleDelete = async (id: string) => {
@@ -78,81 +135,70 @@ export default function Dashboard() {
     try {
       await api.delete(`/api/servers/${id}`)
       toast.success('Server deleted successfully')
-      fetchServers()
-    } catch (error) {
+      refreshAll()
+    } catch {
       toast.error('Failed to delete server')
     }
   }
 
-  const handleEdit = (server: Server) => {
-    setEditingServer(server)
-    setShowModal(true)
+  const handleEdit  = (s: Server) => { setEditingServer(s);   setShowModal(true) }
+  const handleAdd   = ()           => { setEditingServer(null); setShowModal(true) }
+
+  // ── Page-limit change ─────────────────────────────────────────────────────
+  const handlePageLimitChange = (newLimit: 10 | 20 | 50) => {
+    setPageLimit(newLimit)
+    setPage(1)
   }
 
-  const handleAdd = () => {
-    setEditingServer(null)
-    setShowModal(true)
-  }
-
-  const filteredServers = useMemo(() => {
-    const q = search.toLowerCase().trim()
-    if (!q) return servers
-    return servers.filter(s =>
-      s.project_name.toLowerCase().includes(q) ||
-      s.project_purpose.toLowerCase().includes(q) ||
-      s.environment.toLowerCase().includes(q) ||
-      s.vm_name.toLowerCase().includes(q) ||
-      s.ip.toLowerCase().includes(q) ||
-      s.hostname.toLowerCase().includes(q)
-    )
-  }, [servers, search])
-
+  // ── Report-tab derived data (from allServers) ─────────────────────────────
   const projectGroups = useMemo(() => {
     const map = new Map<string, Server[]>()
-    servers.forEach(s => {
+    allServers.forEach(s => {
       if (!map.has(s.project_name)) map.set(s.project_name, [])
       map.get(s.project_name)!.push(s)
     })
     return map
-  }, [servers])
+  }, [allServers])
 
-  const costReport = useMemo(() => {
-    return Array.from(projectGroups.entries()).map(([project, list]) => ({
+  const costReport = useMemo(() =>
+    Array.from(projectGroups.entries()).map(([project, list]) => ({
       project,
       serverCount: list.length,
-      totalCost: list.reduce((sum, s) => sum + s.total_cost, 0),
-      environments: Array.from(new Set(list.map(s => s.environment))),
-    })).sort((a, b) => b.totalCost - a.totalCost)
-  }, [projectGroups])
+      totalCost:   list.reduce((sum, s) => sum + s.total_cost, 0),
+      environments:Array.from(new Set(list.map(s => s.environment))),
+    })).sort((a, b) => b.totalCost - a.totalCost),
+  [projectGroups])
 
-  const resourceReport = useMemo(() => {
-    return Array.from(projectGroups.entries()).map(([project, list]) => ({
+  const resourceReport = useMemo(() =>
+    Array.from(projectGroups.entries()).map(([project, list]) => ({
       project,
-      serverCount: list.length,
-      totalCPU: list.reduce((sum, s) => sum + s.cpu, 0),
-      totalRAM: list.reduce((sum, s) => sum + s.ram, 0),
+      serverCount:  list.length,
+      totalCPU:     list.reduce((sum, s) => sum + s.cpu, 0),
+      totalRAM:     list.reduce((sum, s) => sum + s.ram, 0),
       totalStorage: list.reduce((sum, s) => sum + s.storage, 0),
-    })).sort((a, b) => b.totalCPU - a.totalCPU)
-  }, [projectGroups])
+    })).sort((a, b) => b.totalCPU - a.totalCPU),
+  [projectGroups])
 
-  const projectList = useMemo(() => {
-    return Array.from(projectGroups.entries()).map(([project, list]) => ({
+  const projectList = useMemo(() =>
+    Array.from(projectGroups.entries()).map(([project, list]) => ({
       project,
       purpose: list[0]?.project_purpose || '',
       servers: list,
-    })).sort((a, b) => a.project.localeCompare(b.project))
-  }, [projectGroups])
+    })).sort((a, b) => a.project.localeCompare(b.project)),
+  [projectGroups])
 
-  const totalCost = useMemo(() => servers.reduce((s, r) => s + r.total_cost, 0), [servers])
+  const totalCost = useMemo(() => allServers.reduce((s, r) => s + r.total_cost, 0), [allServers])
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'servers', label: 'All Servers', icon: <ServerStackIcon className="h-4 w-4" /> },
-    { id: 'cost', label: 'Cost Report', icon: <CurrencyDollarIcon className="h-4 w-4" /> },
-    { id: 'resources', label: 'CPU & RAM', icon: <CpuChipIcon className="h-4 w-4" /> },
-    { id: 'project-list', label: 'By Project', icon: <FolderOpenIcon className="h-4 w-4" /> },
+    { id: 'servers',      label: 'All Servers',  icon: <ServerStackIcon   className="h-4 w-4" /> },
+    { id: 'cost',         label: 'Cost Report',  icon: <CurrencyDollarIcon className="h-4 w-4" /> },
+    { id: 'resources',    label: 'CPU & RAM',    icon: <CpuChipIcon        className="h-4 w-4" /> },
+    { id: 'project-list', label: 'By Project',   icon: <FolderOpenIcon     className="h-4 w-4" /> },
   ]
 
-  if (loading) {
+  const initialLoading = reportsLoading && tableLoading
+
+  if (initialLoading) {
     return (
       <Layout>
         <div className="flex justify-center items-center h-64">
@@ -165,6 +211,10 @@ export default function Dashboard() {
     )
   }
 
+  // Derived info for the "showing X–Y of Z" label
+  const showFrom = totalCount === 0 ? 0 : (page - 1) * pageLimit + 1
+  const showTo   = Math.min(page * pageLimit, totalCount)
+
   return (
     <Layout>
       {/* ── Page Header ── */}
@@ -172,9 +222,7 @@ export default function Dashboard() {
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Infrastructure Overview</h1>
-            <p className="mt-1 text-sm text-slate-500">
-              Manage and monitor all servers across your projects.
-            </p>
+            <p className="mt-1 text-sm text-slate-500">Manage and monitor all servers across your projects.</p>
           </div>
           <button
             onClick={handleAdd}
@@ -187,72 +235,75 @@ export default function Dashboard() {
 
         {/* KPI Cards */}
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
-          <KpiCard
-            label="Total Servers"
-            value={servers.length.toString()}
+          <KpiCard label="Total Servers" value={allServers.length.toString()}
             sub={`across ${projectGroups.size} project${projectGroups.size !== 1 ? 's' : ''}`}
-            icon={<ServerStackIcon className="h-5 w-5 text-blue-600" />}
-            color="blue"
-          />
-          <KpiCard
-            label="Total Cost"
-            value={`$${totalCost.toFixed(2)}`}
-            sub={servers.length ? `avg $${(totalCost / servers.length).toFixed(2)}/server` : 'no data'}
-            icon={<CurrencyDollarIcon className="h-5 w-5 text-emerald-600" />}
-            color="emerald"
-          />
-          <KpiCard
-            label="Total CPU"
-            value={`${servers.reduce((s, r) => s + r.cpu, 0)} cores`}
-            sub={servers.length ? `avg ${(servers.reduce((s, r) => s + r.cpu, 0) / servers.length).toFixed(1)} cores/server` : 'no data'}
-            icon={<CpuChipIcon className="h-5 w-5 text-violet-600" />}
-            color="violet"
-          />
-          <KpiCard
-            label="Total RAM"
-            value={`${servers.reduce((s, r) => s + r.ram, 0)} GB`}
-            sub={`${servers.reduce((s, r) => s + r.storage, 0)} GB storage total`}
-            icon={<CircleStackIcon className="h-5 w-5 text-amber-600" />}
-            color="amber"
-          />
+            icon={<ServerStackIcon className="h-5 w-5 text-blue-600" />} color="blue" />
+          <KpiCard label="Total Cost" value={`$${totalCost.toFixed(2)}`}
+            sub={allServers.length ? `avg $${(totalCost / allServers.length).toFixed(2)}/server` : 'no data'}
+            icon={<CurrencyDollarIcon className="h-5 w-5 text-emerald-600" />} color="emerald" />
+          <KpiCard label="Total CPU" value={`${allServers.reduce((s, r) => s + r.cpu, 0)} cores`}
+            sub={allServers.length ? `avg ${(allServers.reduce((s, r) => s + r.cpu, 0) / allServers.length).toFixed(1)} cores/server` : 'no data'}
+            icon={<CpuChipIcon className="h-5 w-5 text-violet-600" />} color="violet" />
+          <KpiCard label="Total RAM" value={`${allServers.reduce((s, r) => s + r.ram, 0)} GB`}
+            sub={`${allServers.reduce((s, r) => s + r.storage, 0)} GB storage total`}
+            icon={<CircleStackIcon className="h-5 w-5 text-amber-600" />} color="amber" />
         </div>
       </div>
 
       {/* ── Tabs ── */}
       <div className="flex items-center gap-1 bg-slate-100 rounded-xl p-1 mb-6 w-fit">
         {tabs.map(tab => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
+          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === tab.id
                 ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
                 : 'text-slate-500 hover:text-slate-700'
             }`}
           >
-            {tab.icon}
-            {tab.label}
+            {tab.icon}{tab.label}
           </button>
         ))}
       </div>
 
-      {/* ── All Servers ── */}
+      {/* ── All Servers (paginated) ── */}
       {activeTab === 'servers' && (
         <>
-          <div className="mb-4">
-            <div className="relative max-w-sm">
+          {/* Toolbar: search + per-page selector */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+            <div className="relative max-w-sm w-full">
               <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
               <input
                 type="text"
-                value={search}
-                onChange={e => setSearch(e.target.value)}
+                value={searchInput}
+                onChange={e => handleSearchChange(e.target.value)}
                 placeholder="Search servers, projects, IPs…"
                 className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition"
               />
             </div>
+
+            {/* Per-page selector */}
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="text-xs text-slate-500 font-medium">Rows per page</span>
+              <div className="flex items-center gap-1 bg-slate-100 rounded-lg p-0.5">
+                {PAGE_SIZE_OPTIONS.map(size => (
+                  <button
+                    key={size}
+                    onClick={() => handlePageLimitChange(size)}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                      pageLimit === size
+                        ? 'bg-white text-slate-900 shadow-sm ring-1 ring-slate-200'
+                        : 'text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {size}
+                  </button>
+                ))}
+              </div>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
+            {/* Table */}
             <div className="overflow-x-auto">
               <table className="min-w-full">
                 <thead>
@@ -268,68 +319,73 @@ export default function Dashboard() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
-                  {filteredServers.map((server, idx) => (
-                    <tr key={server.id} className="hover:bg-slate-50 transition-colors">
-                      <td className="px-5 py-4 text-xs text-slate-400 font-mono">{idx + 1}</td>
-                      <td className="px-5 py-4">
-                        <p className="text-sm font-semibold text-slate-900">{server.project_name}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{server.project_purpose}</p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-full ${envStyle(server.environment)}`}>
-                          {server.environment}
-                        </span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <p className="text-sm font-medium text-slate-900">{server.vm_name}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{server.os_version}</p>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex gap-3 text-xs text-slate-600">
-                          <span className="flex items-center gap-1">
-                            <span className="font-semibold text-slate-800">{server.cpu}</span> CPU
+                  {tableLoading
+                    ? Array.from({ length: pageLimit }).map((_, i) => <SkeletonRow key={i} />)
+                    : pagedServers.map((server, idx) => (
+                      <tr key={server.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-4 text-xs text-slate-400 font-mono">
+                          {(page - 1) * pageLimit + idx + 1}
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-semibold text-slate-900">{server.project_name}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{server.project_purpose}</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-full ${envStyle(server.environment)}`}>
+                            {server.environment}
                           </span>
-                          <span className="flex items-center gap-1">
-                            <span className="font-semibold text-slate-800">{server.ram}</span> GB RAM
-                          </span>
-                          <span className="flex items-center gap-1">
-                            <span className="font-semibold text-slate-800">{server.storage}</span> GB
-                          </span>
-                        </div>
-                      </td>
-                      <td className="px-5 py-4">
-                        <p className="text-sm text-slate-900 font-mono">{server.ip}</p>
-                        <p className="text-xs text-slate-500 mt-0.5">{server.hostname}</p>
-                      </td>
-                      <td className="px-5 py-4 text-right">
-                        <span className="text-sm font-semibold text-slate-900">${server.total_cost.toFixed(2)}</span>
-                      </td>
-                      <td className="px-5 py-4">
-                        <div className="flex items-center justify-center gap-2">
-                          <button
-                            onClick={() => handleEdit(server)}
-                            className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors"
-                            title="Edit"
-                          >
-                            <PencilIcon className="h-4 w-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(server.id)}
-                            className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors"
-                            title="Delete"
-                          >
-                            <TrashIcon className="h-4 w-4" />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="text-sm font-medium text-slate-900">{server.vm_name}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{server.os_version}</p>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex gap-3 text-xs text-slate-600">
+                            <span><span className="font-semibold text-slate-800">{server.cpu}</span> CPU</span>
+                            <span><span className="font-semibold text-slate-800">{server.ram}</span> GB RAM</span>
+                            <span><span className="font-semibold text-slate-800">{server.storage}</span> GB</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-4">
+                          <p className="text-sm text-slate-900 font-mono">{server.ip}</p>
+                          <p className="text-xs text-slate-500 mt-0.5">{server.hostname}</p>
+                        </td>
+                        <td className="px-5 py-4 text-right">
+                          <span className="text-sm font-semibold text-slate-900">${server.total_cost.toFixed(2)}</span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <div className="flex items-center justify-center gap-2">
+                            <button onClick={() => handleEdit(server)}
+                              className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors" title="Edit">
+                              <PencilIcon className="h-4 w-4" />
+                            </button>
+                            <button onClick={() => handleDelete(server.id)}
+                              className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors" title="Delete">
+                              <TrashIcon className="h-4 w-4" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  }
                 </tbody>
               </table>
-              {filteredServers.length === 0 && (
+
+              {!tableLoading && pagedServers.length === 0 && (
                 <EmptyState message={search ? `No servers match "${search}"` : 'No servers yet. Add your first server to get started.'} />
               )}
             </div>
+
+            {/* Pagination footer */}
+            {totalCount > 0 && (
+              <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-100 bg-slate-50">
+                <p className="text-xs text-slate-500">
+                  Showing <span className="font-semibold text-slate-700">{showFrom}–{showTo}</span> of{' '}
+                  <span className="font-semibold text-slate-700">{totalCount}</span> servers
+                </p>
+                <Pagination page={page} totalPages={totalPages} onPageChange={setPage} />
+              </div>
+            )}
           </div>
         </>
       )}
@@ -345,11 +401,11 @@ export default function Dashboard() {
             <table className="min-w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</th>
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Environments</th>
-                  <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Servers</th>
-                  <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Cost</th>
-                  <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Avg / Server</th>
+                  <th className="px-5 py-3.5 text-left   text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</th>
+                  <th className="px-5 py-3.5 text-left   text-xs font-semibold text-slate-500 uppercase tracking-wider">Environments</th>
+                  <th className="px-5 py-3.5 text-right  text-xs font-semibold text-slate-500 uppercase tracking-wider">Servers</th>
+                  <th className="px-5 py-3.5 text-right  text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Cost</th>
+                  <th className="px-5 py-3.5 text-right  text-xs font-semibold text-slate-500 uppercase tracking-wider">Avg / Server</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -373,9 +429,9 @@ export default function Dashboard() {
                 <tfoot>
                   <tr className="bg-slate-50 border-t-2 border-slate-200">
                     <td className="px-5 py-3.5 text-sm font-bold text-slate-900" colSpan={2}>Grand Total</td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-slate-900 text-right">{servers.length}</td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-slate-900 text-right">{allServers.length}</td>
                     <td className="px-5 py-3.5 text-sm font-bold text-blue-700 text-right">
-                      ${servers.reduce((s, r) => s + r.total_cost, 0).toFixed(2)}
+                      ${allServers.reduce((s, r) => s + r.total_cost, 0).toFixed(2)}
                     </td>
                     <td />
                   </tr>
@@ -398,7 +454,7 @@ export default function Dashboard() {
             <table className="min-w-full">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200">
-                  <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</th>
+                  <th className="px-5 py-3.5 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</th>
                   <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Servers</th>
                   <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total CPU</th>
                   <th className="px-5 py-3.5 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Total RAM</th>
@@ -424,10 +480,10 @@ export default function Dashboard() {
                 <tfoot>
                   <tr className="bg-slate-50 border-t-2 border-slate-200">
                     <td className="px-5 py-3.5 text-sm font-bold text-slate-900">Total</td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-slate-900 text-right">{servers.length}</td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-blue-700 text-right">{servers.reduce((s, r) => s + r.cpu, 0)} cores</td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-blue-700 text-right">{servers.reduce((s, r) => s + r.ram, 0)} GB</td>
-                    <td className="px-5 py-3.5 text-sm font-bold text-blue-700 text-right">{servers.reduce((s, r) => s + r.storage, 0)} GB</td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-slate-900 text-right">{allServers.length}</td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-blue-700 text-right">{allServers.reduce((s, r) => s + r.cpu, 0)} cores</td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-blue-700 text-right">{allServers.reduce((s, r) => s + r.ram, 0)} GB</td>
+                    <td className="px-5 py-3.5 text-sm font-bold text-blue-700 text-right">{allServers.reduce((s, r) => s + r.storage, 0)} GB</td>
                     <td colSpan={2} />
                   </tr>
                 </tfoot>
@@ -446,9 +502,7 @@ export default function Dashboard() {
               <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white">{group.project}</h3>
-                  {group.purpose && (
-                    <p className="text-xs text-slate-400 mt-0.5">{group.purpose}</p>
-                  )}
+                  {group.purpose && <p className="text-xs text-slate-400 mt-0.5">{group.purpose}</p>}
                 </div>
                 <span className="text-xs font-semibold bg-blue-600 text-white px-3 py-1 rounded-full shadow">
                   {group.servers.length} server{group.servers.length !== 1 ? 's' : ''}
@@ -458,10 +512,10 @@ export default function Dashboard() {
                 <table className="min-w-full">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-200">
-                      <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">VM Name</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Environment</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">IP / Hostname</th>
-                      <th className="px-5 py-3 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">OS</th>
+                      <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">VM Name</th>
+                      <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">Environment</th>
+                      <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">IP / Hostname</th>
+                      <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">OS</th>
                       <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">CPU</th>
                       <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">RAM</th>
                       <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Storage</th>
@@ -516,17 +570,83 @@ export default function Dashboard() {
         <ServerModal
           server={editingServer}
           onClose={() => setShowModal(false)}
-          onSave={() => {
-            setShowModal(false)
-            fetchServers()
-          }}
+          onSave={() => { setShowModal(false); refreshAll() }}
         />
       )}
     </Layout>
   )
 }
 
-// ── KPI Card ──
+// ── Pagination component ──────────────────────────────────────────────────────
+function Pagination({ page, totalPages, onPageChange }: {
+  page: number; totalPages: number; onPageChange: (p: number) => void
+}) {
+  if (totalPages <= 1) return null
+
+  // Build page number list with ellipsis: always show first, last, and ±2 around current
+  const pages: (number | '…')[] = []
+  for (let i = 1; i <= totalPages; i++) {
+    if (i === 1 || i === totalPages || (i >= page - 2 && i <= page + 2)) {
+      pages.push(i)
+    } else if (pages[pages.length - 1] !== '…') {
+      pages.push('…')
+    }
+  }
+
+  const btnBase = 'h-8 min-w-[2rem] px-1.5 rounded-lg text-xs font-semibold flex items-center justify-center transition-all'
+  const btnActive = 'bg-blue-600 text-white shadow-sm'
+  const btnIdle   = 'text-slate-600 hover:bg-slate-100'
+  const btnDisabled = 'text-slate-300 cursor-not-allowed'
+
+  return (
+    <div className="flex items-center gap-1">
+      <button
+        onClick={() => onPageChange(page - 1)}
+        disabled={page === 1}
+        className={`${btnBase} ${page === 1 ? btnDisabled : btnIdle}`}
+      >
+        <ChevronLeftIcon className="h-3.5 w-3.5" />
+      </button>
+
+      {pages.map((p, i) =>
+        p === '…'
+          ? <span key={`ellipsis-${i}`} className="h-8 px-1 flex items-center text-xs text-slate-400">…</span>
+          : (
+            <button
+              key={p}
+              onClick={() => onPageChange(p as number)}
+              className={`${btnBase} ${p === page ? btnActive : btnIdle}`}
+            >
+              {p}
+            </button>
+          )
+      )}
+
+      <button
+        onClick={() => onPageChange(page + 1)}
+        disabled={page === totalPages}
+        className={`${btnBase} ${page === totalPages ? btnDisabled : btnIdle}`}
+      >
+        <ChevronRightIcon className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  )
+}
+
+// ── Skeleton loading row ──────────────────────────────────────────────────────
+function SkeletonRow() {
+  return (
+    <tr className="animate-pulse">
+      {Array.from({ length: 8 }).map((_, i) => (
+        <td key={i} className="px-5 py-4">
+          <div className="h-3 bg-slate-100 rounded-full w-full max-w-[120px]" />
+        </td>
+      ))}
+    </tr>
+  )
+}
+
+// ── KPI Card ──────────────────────────────────────────────────────────────────
 function KpiCard({ label, value, sub, icon, color }: {
   label: string; value: string; sub: string
   icon: React.ReactNode; color: 'blue' | 'emerald' | 'violet' | 'amber'
@@ -548,7 +668,7 @@ function KpiCard({ label, value, sub, icon, color }: {
   )
 }
 
-// ── Empty State ──
+// ── Empty State ───────────────────────────────────────────────────────────────
 function EmptyState({ message }: { message: string }) {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center px-4">
@@ -560,7 +680,7 @@ function EmptyState({ message }: { message: string }) {
   )
 }
 
-// ── Server Modal ──
+// ── Server Modal ──────────────────────────────────────────────────────────────
 interface ServerModalProps {
   server: Server | null
   onClose: () => void
@@ -571,65 +691,52 @@ function buildVmName(d: {
   project_name: string; project_purpose: string; environment: string
   cpu: number; ram: number; storage: number; ip: string
 }): string {
-  const slug = (s: string) => s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-\.]/g, '')
-  const parts = [
-    slug(d.project_name),
-    slug(d.project_purpose),
-    slug(d.environment),
-    `${d.cpu}c`,
-    `${d.ram}gb`,
-    `${d.storage}gb`,
-    d.ip.trim() || 'no-ip',
-  ]
-  return parts.filter(Boolean).join('-')
+  const slug = (s: string) => s.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9\-.]/g, '')
+  return [
+    slug(d.project_name), slug(d.project_purpose), slug(d.environment),
+    `${d.cpu}c`, `${d.ram}gb`, `${d.storage}gb`, d.ip.trim() || 'no-ip',
+  ].filter(Boolean).join('-')
 }
 
 function ServerModal({ server, onClose, onSave }: ServerModalProps) {
   const initialData = {
-    project_name: server?.project_name || '',
-    project_purpose: server?.project_purpose || '',
-    environment: server?.environment || '',
-    cpu: server?.cpu || 1,
-    ram: server?.ram || 1,
-    storage: server?.storage || 10,
-    total_cost: server?.total_cost || 0,
-    os_version: server?.os_version || '',
-    ip: server?.ip || '',
-    hostname: server?.hostname || '',
-    username: server?.username || '',
-    password: server?.password || '',
-    server_no: server?.server_no || '',
-    created_by: server?.created_by || '',
-    remarks: server?.remarks || '',
+    project_name: server?.project_name || '', project_purpose: server?.project_purpose || '',
+    environment:  server?.environment  || '', cpu:  server?.cpu  || 1,
+    ram:          server?.ram          || 1,  storage: server?.storage || 10,
+    total_cost:   server?.total_cost   || 0,  os_version: server?.os_version || '',
+    ip:           server?.ip           || '', hostname: server?.hostname || '',
+    username:     server?.username     || '', password: server?.password || '',
+    server_no:    server?.server_no    || '', created_by: server?.created_by || '',
+    remarks:      server?.remarks      || '',
   }
-  const [formData, setFormData] = useState(initialData)
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [copied, setCopied] = useState(false)
-  const [touched, setTouched] = useState<Record<string, boolean>>({})
+  const [formData, setFormData]           = useState(initialData)
+  const [loading, setLoading]             = useState(false)
+  const [showPassword, setShowPassword]   = useState(false)
+  const [copied, setCopied]               = useState(false)
+  const [touched, setTouched]             = useState<Record<string, boolean>>({})
   const [submitAttempted, setSubmitAttempted] = useState(false)
 
   const validate = (data: typeof formData) => {
-    const errors: Record<string, string> = {}
-    if (!data.project_name.trim()) errors.project_name = 'Project name is required'
-    if (!data.project_purpose.trim()) errors.project_purpose = 'Project purpose is required'
-    if (!data.environment) errors.environment = 'Please select an environment'
-    if (data.cpu < 1) errors.cpu = 'Must be at least 1 core'
-    if (data.ram < 1) errors.ram = 'Must be at least 1 GB'
-    if (data.storage < 1) errors.storage = 'Must be at least 1 GB'
-    if (data.total_cost < 0) errors.total_cost = 'Cost cannot be negative'
-    if (!data.os_version.trim()) errors.os_version = 'OS version is required'
-    if (!data.ip.trim()) errors.ip = 'IP address is required'
-    else if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(data.ip.trim())) errors.ip = 'Enter a valid IP (e.g. 192.168.1.1)'
-    if (!data.hostname.trim()) errors.hostname = 'Hostname is required'
-    if (!data.username.trim()) errors.username = 'Username is required'
-    if (!data.password.trim()) errors.password = 'Password is required'
-    if (!data.server_no.trim()) errors.server_no = 'Server number is required'
-    if (!data.created_by.trim()) errors.created_by = 'Created by is required'
-    return errors
+    const e: Record<string, string> = {}
+    if (!data.project_name.trim())   e.project_name   = 'Project name is required'
+    if (!data.project_purpose.trim())e.project_purpose= 'Project purpose is required'
+    if (!data.environment)           e.environment    = 'Please select an environment'
+    if (data.cpu < 1)                e.cpu            = 'Must be at least 1 core'
+    if (data.ram < 1)                e.ram            = 'Must be at least 1 GB'
+    if (data.storage < 1)            e.storage        = 'Must be at least 1 GB'
+    if (data.total_cost < 0)         e.total_cost     = 'Cost cannot be negative'
+    if (!data.os_version.trim())     e.os_version     = 'OS version is required'
+    if (!data.ip.trim())             e.ip             = 'IP address is required'
+    else if (!/^(\d{1,3}\.){3}\d{1,3}$/.test(data.ip.trim())) e.ip = 'Enter a valid IP'
+    if (!data.hostname.trim())       e.hostname       = 'Hostname is required'
+    if (!data.username.trim())       e.username       = 'Username is required'
+    if (!data.password.trim())       e.password       = 'Password is required'
+    if (!data.server_no.trim())      e.server_no      = 'Server number is required'
+    if (!data.created_by.trim())     e.created_by     = 'Created by is required'
+    return e
   }
 
-  const errors = validate(formData)
+  const errors     = validate(formData)
   const fieldError = (name: string) =>
     (touched[name] || submitAttempted) && errors[name] ? errors[name] : null
 
@@ -640,18 +747,16 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
         : 'border-slate-200 focus:ring-blue-500 focus:border-blue-400 bg-white text-slate-900'
     }`
 
-  const handleBlur = (name: string) =>
-    setTouched(prev => ({ ...prev, [name]: true }))
+  const handleBlur = (name: string) => setTouched(p => ({ ...p, [name]: true }))
 
   const handleCopyCredentials = () => {
     const text = `IP Address: ${formData.ip}\nHostname: ${formData.hostname}\nUsername: ${formData.username}\nPassword: ${formData.password}`
     navigator.clipboard.writeText(text).then(() => {
-      setCopied(true)
-      setTimeout(() => setCopied(false), 2000)
+      setCopied(true); setTimeout(() => setCopied(false), 2000)
     })
   }
 
-  const vmName = buildVmName(formData)
+  const vmName     = buildVmName(formData)
   const isEditMode = !!server
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -669,7 +774,7 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
         toast.success('Server created successfully')
       }
       onSave()
-    } catch (error) {
+    } catch {
       toast.error('Failed to save server')
     } finally {
       setLoading(false)
@@ -678,11 +783,9 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target
-    setFormData(prev => ({
-      ...prev,
-      [name]: name === 'cpu' || name === 'ram' || name === 'storage' || name === 'total_cost'
-        ? Number(value)
-        : value
+    setFormData(p => ({
+      ...p,
+      [name]: ['cpu','ram','storage','total_cost'].includes(name) ? Number(value) : value,
     }))
   }
 
@@ -690,39 +793,28 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
     <div className="fixed inset-0 bg-black/60 backdrop-blur-sm overflow-y-auto h-full w-full z-50 flex items-start justify-center py-8 px-4">
       <div className="w-full max-w-4xl bg-white rounded-2xl shadow-2xl overflow-hidden">
 
-        {/* Modal Header */}
         <div className={`px-6 py-5 ${isEditMode ? 'bg-gradient-to-r from-amber-500 to-orange-500' : 'bg-gradient-to-r from-blue-600 to-indigo-600'}`}>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="p-2 bg-white/20 rounded-xl">
-                <ServerStackIcon className="h-5 w-5 text-white" />
-              </div>
+              <div className="p-2 bg-white/20 rounded-xl"><ServerStackIcon className="h-5 w-5 text-white" /></div>
               <div>
                 <h3 className="text-base font-bold text-white leading-tight">
                   {isEditMode ? 'Edit Server' : 'Add New Server'}
                 </h3>
                 <p className="text-xs text-white/70 mt-0.5">
-                  {isEditMode
-                    ? `Updating: ${server.vm_name}`
-                    : 'Fill in the details to register a new server'}
+                  {isEditMode ? `Updating: ${server.vm_name}` : 'Fill in the details to register a new server'}
                 </p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="p-1.5 rounded-lg bg-white/15 hover:bg-white/30 text-white transition-colors"
-            >
+            <button type="button" onClick={onClose} className="p-1.5 rounded-lg bg-white/15 hover:bg-white/30 text-white transition-colors">
               <XMarkIcon className="h-5 w-5" />
             </button>
           </div>
         </div>
 
-        {/* Form Body */}
         <form onSubmit={handleSubmit} noValidate>
           <div className="px-6 py-6 space-y-7 max-h-[68vh] overflow-y-auto">
 
-            {/* Project Information */}
             <div>
               <SectionHeader color="blue" label="Project Information" />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -759,53 +851,37 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
 
             <div className="border-t border-slate-100" />
 
-            {/* Server Resources */}
             <div>
               <SectionHeader color="indigo" label="Server Resources" />
               <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                 <Field label="CPU (cores)" required error={fieldError('cpu')}>
-                  <input type="number" name="cpu" value={formData.cpu}
-                    onChange={handleChange} onBlur={() => handleBlur('cpu')} min="1"
-                    className={inputClass('cpu')} />
+                  <input type="number" name="cpu" value={formData.cpu} onChange={handleChange} onBlur={() => handleBlur('cpu')} min="1" className={inputClass('cpu')} />
                 </Field>
                 <Field label="RAM (GB)" required error={fieldError('ram')}>
-                  <input type="number" name="ram" value={formData.ram}
-                    onChange={handleChange} onBlur={() => handleBlur('ram')} min="1"
-                    className={inputClass('ram')} />
+                  <input type="number" name="ram" value={formData.ram} onChange={handleChange} onBlur={() => handleBlur('ram')} min="1" className={inputClass('ram')} />
                 </Field>
                 <Field label="Storage (GB)" required error={fieldError('storage')}>
-                  <input type="number" name="storage" value={formData.storage}
-                    onChange={handleChange} onBlur={() => handleBlur('storage')} min="1"
-                    className={inputClass('storage')} />
+                  <input type="number" name="storage" value={formData.storage} onChange={handleChange} onBlur={() => handleBlur('storage')} min="1" className={inputClass('storage')} />
                 </Field>
                 <Field label="Total Cost ($)" required error={fieldError('total_cost')}>
-                  <input type="number" name="total_cost" value={formData.total_cost}
-                    onChange={handleChange} onBlur={() => handleBlur('total_cost')} min="0" step="0.01"
-                    className={inputClass('total_cost')} />
+                  <input type="number" name="total_cost" value={formData.total_cost} onChange={handleChange} onBlur={() => handleBlur('total_cost')} min="0" step="0.01" className={inputClass('total_cost')} />
                 </Field>
                 <Field label="OS Version" required error={fieldError('os_version')}>
-                  <input type="text" name="os_version" value={formData.os_version}
-                    onChange={handleChange} onBlur={() => handleBlur('os_version')}
-                    placeholder="e.g. Ubuntu 22.04" className={inputClass('os_version')} />
+                  <input type="text" name="os_version" value={formData.os_version} onChange={handleChange} onBlur={() => handleBlur('os_version')} placeholder="e.g. Ubuntu 22.04" className={inputClass('os_version')} />
                 </Field>
               </div>
             </div>
 
             <div className="border-t border-slate-100" />
 
-            {/* Network & Access */}
             <div>
               <div className="flex items-center justify-between mb-4">
                 <SectionHeader color="emerald" label="Network & Access" noMargin />
-                <button
-                  type="button"
-                  onClick={handleCopyCredentials}
+                <button type="button" onClick={handleCopyCredentials}
                   className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${
-                    copied
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
-                      : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
-                  }`}
-                >
+                    copied ? 'bg-emerald-50 border-emerald-300 text-emerald-700'
+                           : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50 hover:border-slate-300'
+                  }`}>
                   {copied
                     ? <><CheckIcon className="h-3.5 w-3.5" /> Copied!</>
                     : <><ClipboardDocumentIcon className="h-3.5 w-3.5" /> Copy Credentials</>}
@@ -813,41 +889,24 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="IP Address" required error={fieldError('ip')}>
-                  <input type="text" name="ip" value={formData.ip}
-                    onChange={handleChange} onBlur={() => handleBlur('ip')}
-                    placeholder="e.g. 192.168.1.100" className={inputClass('ip')} />
+                  <input type="text" name="ip" value={formData.ip} onChange={handleChange} onBlur={() => handleBlur('ip')} placeholder="e.g. 192.168.1.100" className={inputClass('ip')} />
                 </Field>
                 <Field label="Hostname" required error={fieldError('hostname')}>
-                  <input type="text" name="hostname" value={formData.hostname}
-                    onChange={handleChange} onBlur={() => handleBlur('hostname')}
-                    placeholder="e.g. server01.example.com" className={inputClass('hostname')} />
+                  <input type="text" name="hostname" value={formData.hostname} onChange={handleChange} onBlur={() => handleBlur('hostname')} placeholder="e.g. server01.example.com" className={inputClass('hostname')} />
                 </Field>
                 <Field label="Username" required error={fieldError('username')}>
-                  <input type="text" name="username" value={formData.username}
-                    onChange={handleChange} onBlur={() => handleBlur('username')}
-                    placeholder="e.g. admin" autoComplete="off" className={inputClass('username')} />
+                  <input type="text" name="username" value={formData.username} onChange={handleChange} onBlur={() => handleBlur('username')} placeholder="e.g. admin" autoComplete="off" className={inputClass('username')} />
                 </Field>
                 <Field label="Password" required error={fieldError('password')}>
                   <div className="relative mt-1">
-                    <input
-                      type={showPassword ? 'text' : 'password'}
-                      name="password"
-                      value={formData.password}
-                      onChange={handleChange}
-                      onBlur={() => handleBlur('password')}
-                      autoComplete="new-password"
-                      placeholder="Enter password"
+                    <input type={showPassword ? 'text' : 'password'} name="password" value={formData.password}
+                      onChange={handleChange} onBlur={() => handleBlur('password')}
+                      autoComplete="new-password" placeholder="Enter password"
                       className={`block w-full rounded-lg px-3 py-2.5 text-sm border pr-10 focus:outline-none focus:ring-2 transition-colors ${
-                        fieldError('password')
-                          ? 'border-red-400 focus:ring-red-300 bg-red-50'
-                          : 'border-slate-200 focus:ring-blue-500 focus:border-blue-400 bg-white'
-                      }`}
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600"
-                    >
+                        fieldError('password') ? 'border-red-400 focus:ring-red-300 bg-red-50' : 'border-slate-200 focus:ring-blue-500 focus:border-blue-400 bg-white'
+                      }`} />
+                    <button type="button" onClick={() => setShowPassword(!showPassword)}
+                      className="absolute inset-y-0 right-0 pr-3 flex items-center text-slate-400 hover:text-slate-600">
                       {showPassword ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
                     </button>
                   </div>
@@ -862,24 +921,19 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
 
             <div className="border-t border-slate-100" />
 
-            {/* Additional Info */}
             <div>
               <SectionHeader color="purple" label="Additional Info" />
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <Field label="Server No" required error={fieldError('server_no')}>
-                  <input type="text" name="server_no" value={formData.server_no}
-                    onChange={handleChange} onBlur={() => handleBlur('server_no')}
-                    placeholder="e.g. SRV-001" className={inputClass('server_no')} />
+                  <input type="text" name="server_no" value={formData.server_no} onChange={handleChange} onBlur={() => handleBlur('server_no')} placeholder="e.g. SRV-001" className={inputClass('server_no')} />
                 </Field>
                 <Field label="Created By" required error={fieldError('created_by')}>
-                  <input type="text" name="created_by" value={formData.created_by}
-                    onChange={handleChange} onBlur={() => handleBlur('created_by')}
-                    placeholder="e.g. John Doe" className={inputClass('created_by')} />
+                  <input type="text" name="created_by" value={formData.created_by} onChange={handleChange} onBlur={() => handleBlur('created_by')} placeholder="e.g. John Doe" className={inputClass('created_by')} />
                 </Field>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700">Remarks</label>
                   <textarea name="remarks" value={formData.remarks} onChange={handleChange} rows={3}
-                    placeholder="Optional notes about this server..."
+                    placeholder="Optional notes about this server…"
                     className="mt-1 block w-full border border-slate-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 bg-white resize-none" />
                 </div>
               </div>
@@ -887,48 +941,35 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
 
           </div>
 
-          {/* Modal Footer */}
           <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-            <p className="text-xs text-slate-400">
-              Fields marked <span className="text-red-500 font-medium">*</span> are required
-            </p>
+            <p className="text-xs text-slate-400">Fields marked <span className="text-red-500 font-medium">*</span> are required</p>
             <div className="flex items-center gap-3">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-700 border border-slate-200 bg-white hover:bg-slate-50 transition-colors"
-              >
+              <button type="button" onClick={onClose}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-700 border border-slate-200 bg-white hover:bg-slate-50 transition-colors">
                 Cancel
               </button>
-              <button
-                type="submit"
-                disabled={loading}
+              <button type="submit" disabled={loading}
                 className={`px-5 py-2 rounded-xl text-sm font-semibold text-white shadow-sm transition-all disabled:opacity-50 inline-flex items-center gap-2 ${
                   isEditMode
                     ? 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600'
                     : 'bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700'
-                }`}
-              >
+                }`}>
                 {loading ? (
-                  <>
-                    <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                    </svg>
-                    Saving…
-                  </>
+                  <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>Saving…</>
                 ) : isEditMode ? 'Update Server' : 'Add Server'}
               </button>
             </div>
           </div>
         </form>
-
       </div>
     </div>
   )
 }
 
-// ── Small helpers ──
+// ── Small helpers ─────────────────────────────────────────────────────────────
 function SectionHeader({ color, label, noMargin }: { color: string; label: string; noMargin?: boolean }) {
   const dot: Record<string, string> = {
     blue: 'bg-blue-600', indigo: 'bg-indigo-500', emerald: 'bg-emerald-500', purple: 'bg-purple-500',

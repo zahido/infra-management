@@ -45,3 +45,6 @@ mongo:
 build_local:
 	docker compose -f docker-compose.local.yml up -d --build
 
+remove_local_volume:
+	docker compose -f docker-compose.local.yml down -v
+
