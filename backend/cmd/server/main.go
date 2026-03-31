@@ -74,6 +74,9 @@ func main() {
 			servers.DELETE("/:id", handlers.DeleteServer)
 		}
 
+		// Project routes
+		api.GET("/projects", handlers.GetProjects)
+
 		// Audit log routes
 		auditRoutes := api.Group("/audit")
 		{

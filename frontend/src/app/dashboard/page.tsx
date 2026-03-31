@@ -60,9 +60,9 @@ export default function Dashboard() {
   const [totalPages, setTotalPages]       = useState(0)
   const [tableLoading, setTableLoading]   = useState(true)
 
-  // ── Search (debounced, server-side) ───────────────────────────────────────
+  // ── Search – All Servers tab (debounced, server-side) ─────────────────────
   const [searchInput, setSearchInput] = useState('')
-  const [search, setSearch]           = useState('') // debounced value
+  const [search, setSearch]           = useState('')
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const handleSearchChange = (val: string) => {
@@ -70,9 +70,12 @@ export default function Dashboard() {
     if (debounceRef.current) clearTimeout(debounceRef.current)
     debounceRef.current = setTimeout(() => {
       setSearch(val)
-      setPage(1)          // reset to first page on new search
+      setPage(1)
     }, 400)
   }
+
+  // ── Filter – By Project tab (client-side, instant) ─────────────────────────
+  const [projectFilter, setProjectFilter] = useState('')
 
   // ── UI state ──────────────────────────────────────────────────────────────
   const [showModal, setShowModal]               = useState(false)
@@ -193,6 +196,12 @@ export default function Dashboard() {
     })).sort((a, b) => a.project.localeCompare(b.project)),
   [projectGroups])
 
+  const filteredProjectList = useMemo(() => {
+    const q = projectFilter.trim().toLowerCase()
+    if (!q) return projectList
+    return projectList.filter(g => g.project.toLowerCase().includes(q))
+  }, [projectList, projectFilter])
+
   const totalCost = useMemo(() => allServers.reduce((s, r) => s + r.total_cost, 0), [allServers])
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
@@ -283,8 +292,16 @@ export default function Dashboard() {
                 value={searchInput}
                 onChange={e => handleSearchChange(e.target.value)}
                 placeholder="Search servers, projects, IPs…"
-                className="w-full pl-9 pr-4 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition"
+                className="w-full pl-9 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition"
               />
+              {searchInput && (
+                <button
+                  onClick={() => { setSearchInput(''); setSearch(''); setPage(1) }}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  <XMarkIcon className="h-3.5 w-3.5" />
+                </button>
+              )}
             </div>
 
             {/* Per-page selector */}
@@ -503,7 +520,45 @@ export default function Dashboard() {
       {/* ── Project Server List ── */}
       {activeTab === 'project-list' && (
         <div className="space-y-5">
-          {projectList.map(group => (
+
+          {/* Filter bar */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+            <div className="relative max-w-sm w-full">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={projectFilter}
+                onChange={e => setProjectFilter(e.target.value)}
+                placeholder="Filter by project name…"
+                className="w-full pl-9 pr-9 py-2.5 bg-white border border-slate-200 rounded-xl text-sm shadow-sm placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition"
+              />
+              {projectFilter && (
+                <button
+                  onClick={() => setProjectFilter('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 h-5 w-5 flex items-center justify-center rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                >
+                  <XMarkIcon className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+
+            {/* Result count badge */}
+            <div className="flex items-center gap-2 shrink-0">
+              {projectFilter ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 ring-1 ring-blue-200 text-xs font-semibold text-blue-700">
+                  <FolderOpenIcon className="h-3.5 w-3.5" />
+                  {filteredProjectList.length} of {projectList.length} project{projectList.length !== 1 ? 's' : ''}
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-xs font-semibold text-slate-600">
+                  <FolderOpenIcon className="h-3.5 w-3.5" />
+                  {projectList.length} project{projectList.length !== 1 ? 's' : ''}
+                </span>
+              )}
+            </div>
+          </div>
+
+          {filteredProjectList.map(group => (
             <div key={group.project} className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
               <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex items-center justify-between">
                 <div>
@@ -564,9 +619,13 @@ export default function Dashboard() {
               </div>
             </div>
           ))}
-          {projectList.length === 0 && (
+          {filteredProjectList.length === 0 && (
             <div className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200">
-              <EmptyState message="No projects found." />
+              <EmptyState message={
+                projectFilter
+                  ? `No projects match "${projectFilter}"`
+                  : 'No projects found.'
+              } />
             </div>
           )}
         </div>

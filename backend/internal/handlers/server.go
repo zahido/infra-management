@@ -128,6 +128,57 @@ func GetServers(c *gin.Context) {
 	})
 }
 
+// GetProjects returns distinct project names sorted alphabetically,
+// together with their server count and project purpose.
+// Supports an optional ?search= query for name filtering.
+func GetProjects(c *gin.Context) {
+	col := database.DB.Collection("servers")
+
+	matchStage := bson.D{}
+	if q := c.Query("search"); q != "" {
+		matchStage = bson.D{{
+			Key:   "project_name",
+			Value: bson.M{"$regex": q, "$options": "i"},
+		}}
+	}
+
+	pipeline := []bson.D{
+		{{Key: "$match", Value: matchStage}},
+		{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: "$project_name"},
+			{Key: "server_count", Value: bson.M{"$sum": 1}},
+			{Key: "purpose", Value: bson.M{"$first": "$project_purpose"}},
+		}}},
+		{{Key: "$sort", Value: bson.D{{Key: "_id", Value: 1}}}},
+	}
+
+	cursor, err := col.Aggregate(context.Background(), pipeline)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch projects"})
+		return
+	}
+	defer cursor.Close(context.Background())
+
+	type projectRow struct {
+		Name         string `json:"name"         bson:"_id"`
+		ServerCount  int    `json:"server_count" bson:"server_count"`
+		Purpose      string `json:"purpose"      bson:"purpose"`
+	}
+	var projects []projectRow
+	if err = cursor.All(context.Background(), &projects); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to decode projects"})
+		return
+	}
+	if projects == nil {
+		projects = []projectRow{}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"projects": projects,
+		"total":    len(projects),
+	})
+}
+
 func GetServer(c *gin.Context) {
 	id := c.Param("id")
 	objectID, err := primitive.ObjectIDFromHex(id)
