@@ -10,7 +10,7 @@ import {
   PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon,
   MagnifyingGlassIcon, CurrencyDollarIcon, CpuChipIcon, ServerStackIcon, XMarkIcon,
   ClipboardDocumentIcon, CheckIcon, ExclamationCircleIcon, FolderOpenIcon,
-  CircleStackIcon, ChevronLeftIcon, ChevronRightIcon,
+  CircleStackIcon, ChevronLeftIcon, ChevronRightIcon, ExclamationTriangleIcon,
 } from '@heroicons/react/24/outline'
 
 interface Server {
@@ -75,9 +75,11 @@ export default function Dashboard() {
   }
 
   // ── UI state ──────────────────────────────────────────────────────────────
-  const [showModal, setShowModal]         = useState(false)
-  const [editingServer, setEditingServer] = useState<Server | null>(null)
-  const [activeTab, setActiveTab]         = useState<Tab>('servers')
+  const [showModal, setShowModal]               = useState(false)
+  const [editingServer, setEditingServer]       = useState<Server | null>(null)
+  const [activeTab, setActiveTab]               = useState<Tab>('servers')
+  const [deleteTarget, setDeleteTarget]         = useState<Server | null>(null)
+  const [deleteLoading, setDeleteLoading]       = useState(false)
   const router = useRouter()
 
   // ── Fetch all servers for report tabs (one-shot) ──────────────────────────
@@ -130,14 +132,18 @@ export default function Dashboard() {
     fetchPagedServers(page, pageLimit, search)
   }
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Are you sure you want to delete this server?')) return
+  const confirmDelete = async () => {
+    if (!deleteTarget) return
+    setDeleteLoading(true)
     try {
-      await api.delete(`/api/servers/${id}`)
+      await api.delete(`/api/servers/${deleteTarget.id}`)
       toast.success('Server deleted successfully')
+      setDeleteTarget(null)
       refreshAll()
     } catch {
       toast.error('Failed to delete server')
+    } finally {
+      setDeleteLoading(false)
     }
   }
 
@@ -359,7 +365,7 @@ export default function Dashboard() {
                               className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50 transition-colors" title="Edit">
                               <PencilIcon className="h-4 w-4" />
                             </button>
-                            <button onClick={() => handleDelete(server.id)}
+                            <button onClick={() => setDeleteTarget(server)}
                               className="p-1.5 rounded-lg text-red-500 hover:bg-red-50 transition-colors" title="Delete">
                               <TrashIcon className="h-4 w-4" />
                             </button>
@@ -573,6 +579,15 @@ export default function Dashboard() {
           onSave={() => { setShowModal(false); refreshAll() }}
         />
       )}
+
+      {deleteTarget && (
+        <DeleteConfirmModal
+          server={deleteTarget}
+          loading={deleteLoading}
+          onConfirm={confirmDelete}
+          onCancel={() => setDeleteTarget(null)}
+        />
+      )}
     </Layout>
   )
 }
@@ -676,6 +691,112 @@ function EmptyState({ message }: { message: string }) {
         <ServerStackIcon className="h-6 w-6 text-slate-400" />
       </div>
       <p className="text-sm text-slate-500 max-w-xs">{message}</p>
+    </div>
+  )
+}
+
+// ── Delete Confirm Modal ──────────────────────────────────────────────────────
+function DeleteConfirmModal({ server, loading, onConfirm, onCancel }: {
+  server: Server
+  loading: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
+      {/* Backdrop */}
+      <div
+        className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+        onClick={!loading ? onCancel : undefined}
+      />
+
+      {/* Dialog */}
+      <div className="relative w-full max-w-md bg-white rounded-2xl shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+
+        {/* Red top bar */}
+        <div className="h-1.5 w-full bg-gradient-to-r from-red-500 to-rose-500" />
+
+        <div className="px-6 pt-6 pb-5">
+          {/* Icon + heading */}
+          <div className="flex items-start gap-4">
+            <div className="flex-shrink-0 flex items-center justify-center h-12 w-12 rounded-full bg-red-50 ring-4 ring-red-50">
+              <ExclamationTriangleIcon className="h-6 w-6 text-red-500" />
+            </div>
+            <div className="min-w-0">
+              <h3 className="text-base font-bold text-slate-900 leading-tight">
+                Delete Server
+              </h3>
+              <p className="mt-1 text-sm text-slate-500">
+                This action is permanent and cannot be undone.
+              </p>
+            </div>
+          </div>
+
+          {/* Server info card */}
+          <div className="mt-5 rounded-xl bg-slate-50 ring-1 ring-slate-200 px-4 py-3.5 space-y-2">
+            <InfoRow label="VM Name"     value={server.vm_name}      mono />
+            <InfoRow label="Project"     value={server.project_name} />
+            <InfoRow label="Environment" value={server.environment}  badge />
+            <InfoRow label="IP Address"  value={server.ip}           mono />
+          </div>
+
+          <p className="mt-4 text-xs text-slate-400 text-center">
+            Type <span className="font-semibold text-slate-600">Delete</span> button below to permanently remove this server and all its data.
+          </p>
+        </div>
+
+        {/* Footer */}
+        <div className="px-6 pb-6 flex items-center justify-end gap-3">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-700 border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                </svg>
+                Deleting…
+              </>
+            ) : (
+              <>
+                <TrashIcon className="h-4 w-4" />
+                Delete Server
+              </>
+            )}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function InfoRow({ label, value, mono, badge }: {
+  label: string; value: string; mono?: boolean; badge?: boolean
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 text-sm">
+      <span className="text-slate-500 shrink-0">{label}</span>
+      {badge ? (
+        <span className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${envStyle(value)}`}>
+          {value}
+        </span>
+      ) : (
+        <span className={`font-medium text-slate-800 truncate ${mono ? 'font-mono text-xs' : ''}`}>
+          {value}
+        </span>
+      )}
     </div>
   )
 }
