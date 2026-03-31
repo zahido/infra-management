@@ -9,6 +9,7 @@ import toast from 'react-hot-toast'
 import {
   PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon,
   MagnifyingGlassIcon, CurrencyDollarIcon, CpuChipIcon, ServerStackIcon, XMarkIcon,
+  ClipboardDocumentIcon, CheckIcon,
 } from '@heroicons/react/24/outline'
 
 interface Server {
@@ -543,6 +544,15 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
   const [formData, setFormData] = useState(initialData)
   const [loading, setLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
+  const [copied, setCopied] = useState(false)
+
+  const handleCopyCredentials = () => {
+    const text = `IP Address: ${formData.ip}\nHostname: ${formData.hostname}\nUsername: ${formData.username}\nPassword: ${formData.password}`
+    navigator.clipboard.writeText(text).then(() => {
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    })
+  }
 
   const vmName = buildVmName(formData)
 
@@ -682,6 +692,23 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
                     {showPassword ? <EyeSlashIcon className="h-4 w-4" /> : <EyeIcon className="h-4 w-4" />}
                   </button>
                 </div>
+              </div>
+              <div className="md:col-span-2 flex justify-end">
+                <button
+                  type="button"
+                  onClick={handleCopyCredentials}
+                  className={`inline-flex items-center gap-2 px-4 py-2 rounded-md text-sm font-medium border transition-colors ${
+                    copied
+                      ? 'bg-green-50 border-green-300 text-green-700'
+                      : 'bg-gray-50 border-gray-300 text-gray-700 hover:bg-gray-100'
+                  }`}
+                >
+                  {copied ? (
+                    <><CheckIcon className="h-4 w-4" /> Copied!</>
+                  ) : (
+                    <><ClipboardDocumentIcon className="h-4 w-4" /> Copy Credentials</>
+                  )}
+                </button>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700">Server No</label>
