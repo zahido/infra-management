@@ -10,8 +10,9 @@ type Server struct {
 	ID           primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	ProjectName  string             `json:"project_name" bson:"project_name" binding:"required"`
 	Purpose      string             `json:"project_purpose" bson:"project_purpose" binding:"required"`
-	Environment  string             `json:"environment" bson:"environment" binding:"required"`
-	VMName       string             `json:"vm_name" bson:"vm_name" binding:"required"`
+	Environment    string             `json:"environment" bson:"environment" binding:"required"`
+	PhysicalServer string             `json:"physical_server" bson:"physical_server" binding:"required"`
+	VMName         string             `json:"vm_name" bson:"vm_name" binding:"required"`
 	CPU          int                `json:"cpu" bson:"cpu" binding:"required"`
 	RAM          int                `json:"ram" bson:"ram" binding:"required"`
 	Storage      int                `json:"storage" bson:"storage" binding:"required"`

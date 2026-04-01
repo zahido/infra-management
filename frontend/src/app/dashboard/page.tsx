@@ -18,6 +18,7 @@ interface Server {
   project_name: string
   project_purpose: string
   environment: string
+  physical_server: string
   vm_name: string
   cpu: number
   ram: number
@@ -39,6 +40,13 @@ interface Server {
 type Tab = 'servers' | 'cost' | 'resources' | 'project-list'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
+
+const PHYSICAL_SERVER_OPTIONS = [
+  'ESXI-06', 'ESXI-07', 'ESXI-08', 'ESXI-09', 'ESXI-10',
+  'ESXI-11', 'ESXI-12', 'ESXI-13', 'ESXI-14',
+  'ESXI-56.101', 'ESXI-56.102',
+  'PROXMOX-16', 'PROXMOX-17', 'PROXMOX-18', 'PROXMOX-19',
+]
 
 const ENV_STYLES: Record<string, string> = {
   Production: 'bg-red-100 text-red-700 ring-1 ring-red-200',
@@ -334,6 +342,7 @@ export default function Dashboard() {
                     <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">#</th>
                     <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Project</th>
                     <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Environment</th>
+                    <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Physical Server</th>
                     <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">VM / OS</th>
                     <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Resources</th>
                     <th className="px-5 py-3.5 text-left text-xs font-semibold text-slate-500 uppercase tracking-wider">Network</th>
@@ -356,6 +365,11 @@ export default function Dashboard() {
                         <td className="px-5 py-4">
                           <span className={`inline-flex px-2.5 py-1 text-xs font-semibold rounded-full ${envStyle(server.environment)}`}>
                             {server.environment}
+                          </span>
+                        </td>
+                        <td className="px-5 py-4">
+                          <span className="inline-flex px-2.5 py-1 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+                            {server.physical_server}
                           </span>
                         </td>
                         <td className="px-5 py-4">
@@ -575,6 +589,7 @@ export default function Dashboard() {
                     <tr className="bg-slate-50 border-b border-slate-200">
                       <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">VM Name</th>
                       <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">Environment</th>
+                      <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">Physical Server</th>
                       <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">IP / Hostname</th>
                       <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">OS</th>
                       <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">CPU</th>
@@ -593,6 +608,11 @@ export default function Dashboard() {
                           </span>
                         </td>
                         <td className="px-5 py-3">
+                          <span className="inline-flex px-2 py-0.5 text-xs font-semibold rounded-full bg-slate-100 text-slate-700 ring-1 ring-slate-200">
+                            {server.physical_server}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3">
                           <p className="text-sm text-slate-900 font-mono">{server.ip}</p>
                           <p className="text-xs text-slate-500 mt-0.5">{server.hostname}</p>
                         </td>
@@ -606,7 +626,7 @@ export default function Dashboard() {
                   </tbody>
                   <tfoot>
                     <tr className="bg-slate-50 border-t border-slate-200">
-                      <td className="px-5 py-2.5 text-xs font-bold text-slate-600" colSpan={4}>Project Total</td>
+                      <td className="px-5 py-2.5 text-xs font-bold text-slate-600" colSpan={5}>Project Total</td>
                       <td className="px-5 py-2.5 text-xs font-bold text-slate-900 text-right">{group.servers.reduce((s, r) => s + r.cpu, 0)}c</td>
                       <td className="px-5 py-2.5 text-xs font-bold text-slate-900 text-right">{group.servers.reduce((s, r) => s + r.ram, 0)} GB</td>
                       <td className="px-5 py-2.5 text-xs font-bold text-slate-900 text-right">{group.servers.reduce((s, r) => s + r.storage, 0)} GB</td>
@@ -711,7 +731,7 @@ function Pagination({ page, totalPages, onPageChange }: {
 function SkeletonRow() {
   return (
     <tr className="animate-pulse">
-      {Array.from({ length: 8 }).map((_, i) => (
+      {Array.from({ length: 9 }).map((_, i) => (
         <td key={i} className="px-5 py-4">
           <div className="h-3 bg-slate-100 rounded-full w-full max-w-[120px]" />
         </td>
@@ -881,7 +901,8 @@ function buildVmName(d: {
 function ServerModal({ server, onClose, onSave }: ServerModalProps) {
   const initialData = {
     project_name: server?.project_name || '', project_purpose: server?.project_purpose || '',
-    environment:  server?.environment  || '', cpu:  server?.cpu  || 1,
+    environment:  server?.environment  || '', physical_server: server?.physical_server || '',
+    cpu:  server?.cpu  || 1,
     ram:          server?.ram          || 1,  storage: server?.storage || 10,
     total_cost:   server?.total_cost   || 0,  os_version: server?.os_version || '',
     ip:           server?.ip           || '', hostname: server?.hostname || '',
@@ -900,7 +921,8 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
     const e: Record<string, string> = {}
     if (!data.project_name.trim())   e.project_name   = 'Project name is required'
     if (!data.project_purpose.trim())e.project_purpose= 'Project purpose is required'
-    if (!data.environment)           e.environment    = 'Please select an environment'
+    if (!data.environment)           e.environment      = 'Please select an environment'
+    if (!data.physical_server)       e.physical_server  = 'Please select a physical server'
     if (data.cpu < 1)                e.cpu            = 'Must be at least 1 core'
     if (data.ram < 1)                e.ram            = 'Must be at least 1 GB'
     if (data.storage < 1)            e.storage        = 'Must be at least 1 GB'
@@ -1016,6 +1038,16 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
                     <option value="Development">Development</option>
                     <option value="Staging">Staging</option>
                     <option value="Production">Production</option>
+                  </select>
+                </Field>
+                <Field label="Physical Server" required error={fieldError('physical_server')}>
+                  <select name="physical_server" value={formData.physical_server}
+                    onChange={handleChange} onBlur={() => handleBlur('physical_server')}
+                    className={inputClass('physical_server')}>
+                    <option value="">Select Physical Server</option>
+                    {PHYSICAL_SERVER_OPTIONS.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
                   </select>
                 </Field>
                 <div>
