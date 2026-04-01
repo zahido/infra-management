@@ -113,8 +113,9 @@ function OptionsCard({
   const [editValue, setEditValue]       = useState('')
   const [editError, setEditError]       = useState('')
   const [saving, setSaving]             = useState(false)
-  const [deleteTarget, setDeleteTarget] = useState<OptionItem | null>(null)
-  const [deleting, setDeleting]         = useState(false)
+  const [deleteTarget, setDeleteTarget]   = useState<OptionItem | null>(null)
+  const [deleting, setDeleting]           = useState(false)
+  const [deleteError, setDeleteError]     = useState<{ message: string; serversCount: number } | null>(null)
   const editInputRef = useRef<HTMLInputElement>(null)
 
   const colors = {
@@ -213,12 +214,17 @@ function OptionsCard({
     setSaving(true)
     setEditError('')
     try {
-      await api.put(updateUrl(id), { name })
+      const res = await api.put(updateUrl(id), { name })
       setItems(prev =>
         prev.map(i => i.id === id ? { ...i, name } : i)
             .sort((a, b) => a.name.localeCompare(b.name))
       )
-      toast.success(`${title.slice(0, -1)} updated`)
+      const affected: number = res.data?.servers_updated ?? 0
+      if (affected > 0) {
+        toast.success(`${title.slice(0, -1)} renamed — ${affected} server${affected !== 1 ? 's' : ''} updated`)
+      } else {
+        toast.success(`${title.slice(0, -1)} updated`)
+      }
       cancelEdit()
     } catch (err: any) {
       const msg = err?.response?.data?.error
@@ -235,13 +241,23 @@ function OptionsCard({
   const handleDelete = async () => {
     if (!deleteTarget) return
     setDeleting(true)
+    setDeleteError(null)
     try {
       await api.delete(deleteUrl(deleteTarget.id))
       setItems(prev => prev.filter(i => i.id !== deleteTarget.id))
       toast.success(`${title.slice(0, -1)} deleted`)
       setDeleteTarget(null)
-    } catch {
-      toast.error(`Failed to delete ${duplicateLabel}`)
+    } catch (err: any) {
+      const data = err?.response?.data
+      if (err?.response?.status === 409 && data?.dependency) {
+        setDeleteError({
+          message:      data.error,
+          serversCount: data.servers_count ?? 0,
+        })
+      } else {
+        toast.error(data?.error || `Failed to delete ${duplicateLabel}`)
+        setDeleteTarget(null)
+      }
     } finally {
       setDeleting(false)
     }
@@ -432,8 +448,9 @@ function OptionsCard({
           name={deleteTarget.name}
           type={title.slice(0, -1)}
           loading={deleting}
+          dependencyError={deleteError}
           onConfirm={handleDelete}
-          onCancel={() => !deleting && setDeleteTarget(null)}
+          onCancel={() => { if (!deleting) { setDeleteTarget(null); setDeleteError(null) } }}
         />
       )}
     </>
@@ -442,14 +459,17 @@ function OptionsCard({
 
 // ── Delete Confirm Modal ──────────────────────────────────────────────────────
 function DeleteConfirmModal({
-  name, type, loading, onConfirm, onCancel,
+  name, type, loading, dependencyError, onConfirm, onCancel,
 }: {
   name: string
   type: string
   loading: boolean
+  dependencyError: { message: string; serversCount: number } | null
   onConfirm: () => void
   onCancel: () => void
 }) {
+  const isBlocked = !!dependencyError
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center px-4">
       <div
@@ -457,21 +477,31 @@ function DeleteConfirmModal({
         onClick={!loading ? onCancel : undefined}
       />
       <div className="relative w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
-        <div className="h-1.5 w-full bg-gradient-to-r from-red-500 to-rose-500" />
+
+        {/* Top accent bar — orange when blocked, red when normal */}
+        <div className={`h-1.5 w-full bg-gradient-to-r ${isBlocked ? 'from-orange-400 to-amber-400' : 'from-red-500 to-rose-500'}`} />
 
         <div className="px-6 pt-6 pb-5">
           <div className="flex items-start gap-4">
-            <div className="flex-shrink-0 flex items-center justify-center h-11 w-11 rounded-full bg-red-50 ring-4 ring-red-50">
-              <ExclamationTriangleIcon className="h-5 w-5 text-red-500" />
+            <div className={`flex-shrink-0 flex items-center justify-center h-11 w-11 rounded-full ring-4 ${
+              isBlocked ? 'bg-orange-50 ring-orange-50' : 'bg-red-50 ring-red-50'
+            }`}>
+              <ExclamationTriangleIcon className={`h-5 w-5 ${isBlocked ? 'text-orange-500' : 'text-red-500'}`} />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-900">Delete {type}</h3>
+              <h3 className="text-base font-bold text-slate-900">
+                {isBlocked ? `Cannot Delete ${type}` : `Delete ${type}`}
+              </h3>
               <p className="mt-1 text-sm text-slate-500">
-                Are you sure you want to remove this {type.toLowerCase()}?
+                {isBlocked
+                  ? `This ${type.toLowerCase()} is still in use.`
+                  : `Are you sure you want to remove this ${type.toLowerCase()}?`
+                }
               </p>
             </div>
           </div>
 
+          {/* Item name row */}
           <div className="mt-4 rounded-xl bg-slate-50 ring-1 ring-slate-200 px-4 py-3">
             <div className="flex items-center gap-2">
               <span className="text-xs text-slate-500 shrink-0">Name</span>
@@ -479,9 +509,30 @@ function DeleteConfirmModal({
             </div>
           </div>
 
-          <p className="mt-3 text-xs text-slate-400 text-center">
-            Servers already using this value won&apos;t be affected, but it will no longer appear in the dropdown.
-          </p>
+          {/* Dependency error block */}
+          {isBlocked && (
+            <div className="mt-3 rounded-xl bg-orange-50 ring-1 ring-orange-200 px-4 py-3.5 space-y-2">
+              <div className="flex items-center gap-2">
+                <ExclamationTriangleIcon className="h-4 w-4 text-orange-500 shrink-0" />
+                <p className="text-sm font-semibold text-orange-800">Dependency Error</p>
+              </div>
+              <p className="text-sm text-orange-700">
+                <span className="font-bold">{dependencyError.serversCount}</span>{' '}
+                server{dependencyError.serversCount !== 1 ? 's are' : ' is'} currently assigned to{' '}
+                <span className="font-semibold">&quot;{name}&quot;</span>.
+              </p>
+              <p className="text-xs text-orange-600">
+                Reassign or remove those servers first, then you can delete this {type.toLowerCase()}.
+              </p>
+            </div>
+          )}
+
+          {/* Normal warning note */}
+          {!isBlocked && (
+            <p className="mt-3 text-xs text-slate-400 text-center">
+              This {type.toLowerCase()} will be permanently removed and will no longer appear in dropdowns.
+            </p>
+          )}
         </div>
 
         <div className="px-6 pb-6 flex items-center justify-end gap-3">
@@ -491,29 +542,32 @@ function DeleteConfirmModal({
             disabled={loading}
             className="px-4 py-2.5 rounded-xl text-sm font-medium text-slate-700 border border-slate-200 bg-white hover:bg-slate-50 transition-colors disabled:opacity-50"
           >
-            Cancel
+            {isBlocked ? 'Close' : 'Cancel'}
           </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={loading}
-            className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
-          >
-            {loading ? (
-              <>
-                <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
-                </svg>
-                Deleting…
-              </>
-            ) : (
-              <>
-                <TrashIcon className="h-4 w-4" />
-                Delete
-              </>
-            )}
-          </button>
+
+          {!isBlocked && (
+            <button
+              type="button"
+              onClick={onConfirm}
+              disabled={loading}
+              className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white bg-gradient-to-r from-red-500 to-rose-500 hover:from-red-600 hover:to-rose-600 shadow-sm transition-all disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {loading ? (
+                <>
+                  <svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z" />
+                  </svg>
+                  Deleting…
+                </>
+              ) : (
+                <>
+                  <TrashIcon className="h-4 w-4" />
+                  Delete
+                </>
+              )}
+            </button>
+          )}
         </div>
       </div>
     </div>

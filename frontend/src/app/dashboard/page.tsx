@@ -41,13 +41,28 @@ type Tab = 'servers' | 'cost' | 'resources' | 'project-list'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
 
+const ENV_BADGE_PALETTE = [
+  'bg-red-100    text-red-700    ring-1 ring-red-200',
+  'bg-amber-100  text-amber-700  ring-1 ring-amber-200',
+  'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+  'bg-blue-100   text-blue-700   ring-1 ring-blue-200',
+  'bg-violet-100 text-violet-700 ring-1 ring-violet-200',
+  'bg-pink-100   text-pink-700   ring-1 ring-pink-200',
+  'bg-cyan-100   text-cyan-700   ring-1 ring-cyan-200',
+  'bg-orange-100 text-orange-700 ring-1 ring-orange-200',
+  'bg-teal-100   text-teal-700   ring-1 ring-teal-200',
+  'bg-indigo-100 text-indigo-700 ring-1 ring-indigo-200',
+]
 
-const ENV_STYLES: Record<string, string> = {
-  Production: 'bg-red-100 text-red-700 ring-1 ring-red-200',
-  Staging:    'bg-amber-100 text-amber-700 ring-1 ring-amber-200',
-  Development:'bg-emerald-100 text-emerald-700 ring-1 ring-emerald-200',
+// Deterministic hash so the same name always maps to the same color
+function strHash(s: string): number {
+  let h = 0
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0
+  return h
 }
-const envStyle = (env: string) => ENV_STYLES[env] ?? 'bg-slate-100 text-slate-600 ring-1 ring-slate-200'
+
+const envStyle = (env: string) =>
+  ENV_BADGE_PALETTE[strHash(env.toLowerCase()) % ENV_BADGE_PALETTE.length]
 
 export default function Dashboard() {
   // ── All-servers dataset (used by report tabs) ──────────────────────────────

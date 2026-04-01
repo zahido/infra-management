@@ -107,8 +107,15 @@ func UpdateEnvironment(c *gin.Context) {
 
 	col := database.DB.Collection("environments")
 
+	// Fetch old name before updating (needed for cascade)
+	var existing models.Environment
+	if err := col.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&existing); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Environment not found"})
+		return
+	}
+
 	// Uniqueness check — exclude the current document
-	count, err := col.CountDocuments(context.Background(), bson.M{
+	dup, err := col.CountDocuments(context.Background(), bson.M{
 		"_id": bson.M{"$ne": objectID},
 		"name": bson.M{
 			"$regex":   "^" + regexp.QuoteMeta(body.Name) + "$",
@@ -119,25 +126,39 @@ func UpdateEnvironment(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check for duplicates"})
 		return
 	}
-	if count > 0 {
+	if dup > 0 {
 		c.JSON(http.StatusConflict, gin.H{"error": "Environment name already exists"})
 		return
 	}
 
-	result, err := col.UpdateOne(
+	// Update the environment record
+	res, err := col.UpdateOne(
 		context.Background(),
 		bson.M{"_id": objectID},
 		bson.M{"$set": bson.M{"name": body.Name}},
 	)
-	if err != nil {
+	if err != nil || res.MatchedCount == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update environment"})
 		return
 	}
-	if result.MatchedCount == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Environment not found"})
-		return
+
+	// Cascade: update all servers that reference the old environment name
+	serverCol := database.DB.Collection("servers")
+	cascadeResult, err := serverCol.UpdateMany(
+		context.Background(),
+		bson.M{"environment": existing.Name},
+		bson.M{"$set": bson.M{"environment": body.Name, "updated_at": time.Now()}},
+	)
+	serversUpdated := int64(0)
+	if err == nil {
+		serversUpdated = cascadeResult.ModifiedCount
 	}
-	c.JSON(http.StatusOK, gin.H{"id": id, "name": body.Name})
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":              id,
+		"name":            body.Name,
+		"servers_updated": serversUpdated,
+	})
 }
 
 func DeleteEnvironment(c *gin.Context) {
@@ -147,7 +168,33 @@ func DeleteEnvironment(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 		return
 	}
+
 	col := database.DB.Collection("environments")
+
+	// Fetch the record so we have the name for the dependency check
+	var env models.Environment
+	if err := col.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&env); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Environment not found"})
+		return
+	}
+
+	// Block deletion if any server still references this environment
+	serverCol := database.DB.Collection("servers")
+	usedBy, err := serverCol.CountDocuments(context.Background(), bson.M{"environment": env.Name})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check server dependencies"})
+		return
+	}
+	if usedBy > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":          "Cannot delete: environment is in use",
+			"dependency":     true,
+			"servers_count":  usedBy,
+			"environment":    env.Name,
+		})
+		return
+	}
+
 	result, err := col.DeleteOne(context.Background(), bson.M{"_id": objectID})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete environment"})
@@ -241,8 +288,15 @@ func UpdatePhysicalServer(c *gin.Context) {
 
 	col := database.DB.Collection("physical_servers")
 
+	// Fetch old name before updating (needed for cascade)
+	var existing models.PhysicalServer
+	if err := col.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&existing); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Physical server not found"})
+		return
+	}
+
 	// Uniqueness check — exclude the current document
-	count, err := col.CountDocuments(context.Background(), bson.M{
+	dup, err := col.CountDocuments(context.Background(), bson.M{
 		"_id": bson.M{"$ne": objectID},
 		"name": bson.M{
 			"$regex":   "^" + regexp.QuoteMeta(body.Name) + "$",
@@ -253,25 +307,39 @@ func UpdatePhysicalServer(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check for duplicates"})
 		return
 	}
-	if count > 0 {
+	if dup > 0 {
 		c.JSON(http.StatusConflict, gin.H{"error": "Physical server name already exists"})
 		return
 	}
 
-	result, err := col.UpdateOne(
+	// Update the physical server record
+	res, err := col.UpdateOne(
 		context.Background(),
 		bson.M{"_id": objectID},
 		bson.M{"$set": bson.M{"name": body.Name}},
 	)
-	if err != nil {
+	if err != nil || res.MatchedCount == 0 {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update physical server"})
 		return
 	}
-	if result.MatchedCount == 0 {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Physical server not found"})
-		return
+
+	// Cascade: update all servers that reference the old physical_server name
+	serverCol := database.DB.Collection("servers")
+	cascadeResult, err := serverCol.UpdateMany(
+		context.Background(),
+		bson.M{"physical_server": existing.Name},
+		bson.M{"$set": bson.M{"physical_server": body.Name, "updated_at": time.Now()}},
+	)
+	serversUpdated := int64(0)
+	if err == nil {
+		serversUpdated = cascadeResult.ModifiedCount
 	}
-	c.JSON(http.StatusOK, gin.H{"id": id, "name": body.Name})
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":              id,
+		"name":            body.Name,
+		"servers_updated": serversUpdated,
+	})
 }
 
 func DeletePhysicalServer(c *gin.Context) {
@@ -281,7 +349,33 @@ func DeletePhysicalServer(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid ID"})
 		return
 	}
+
 	col := database.DB.Collection("physical_servers")
+
+	// Fetch the record so we have the name for the dependency check
+	var ps models.PhysicalServer
+	if err := col.FindOne(context.Background(), bson.M{"_id": objectID}).Decode(&ps); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Physical server not found"})
+		return
+	}
+
+	// Block deletion if any server still references this physical server
+	serverCol := database.DB.Collection("servers")
+	usedBy, err := serverCol.CountDocuments(context.Background(), bson.M{"physical_server": ps.Name})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to check server dependencies"})
+		return
+	}
+	if usedBy > 0 {
+		c.JSON(http.StatusConflict, gin.H{
+			"error":           "Cannot delete: physical server is in use",
+			"dependency":      true,
+			"servers_count":   usedBy,
+			"physical_server": ps.Name,
+		})
+		return
+	}
+
 	result, err := col.DeleteOne(context.Background(), bson.M{"_id": objectID})
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete physical server"})
