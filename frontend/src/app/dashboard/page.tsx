@@ -10,7 +10,7 @@ import {
   PlusIcon, PencilIcon, TrashIcon, EyeIcon, EyeSlashIcon,
   MagnifyingGlassIcon, CurrencyDollarIcon, CpuChipIcon, ServerStackIcon, XMarkIcon,
   ClipboardDocumentIcon, CheckIcon, ExclamationCircleIcon, FolderOpenIcon,
-  CircleStackIcon, ChevronLeftIcon, ChevronRightIcon, ExclamationTriangleIcon,
+  CircleStackIcon, ChevronLeftIcon, ChevronRightIcon, ExclamationTriangleIcon, ServerIcon,
 } from '@heroicons/react/24/outline'
 
 interface Server {
@@ -37,7 +37,7 @@ interface Server {
   updated_at: string
 }
 
-type Tab = 'servers' | 'cost' | 'resources' | 'project-list'
+type Tab = 'servers' | 'cost' | 'resources' | 'project-list' | 'physical-server'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
 
@@ -213,6 +213,31 @@ export default function Dashboard() {
     })).sort((a, b) => a.project.localeCompare(b.project)),
   [projectGroups])
 
+  const physicalServerReport = useMemo(() =>
+    Array.from(projectGroups.entries()).map(([project, list]) => {
+      const psMap = new Map<string, Server[]>()
+      list.forEach(s => {
+        if (!psMap.has(s.physical_server)) psMap.set(s.physical_server, [])
+        psMap.get(s.physical_server)!.push(s)
+      })
+      return {
+        project,
+        purpose:      list[0]?.project_purpose || '',
+        totalVMs:     list.length,
+        totalCost:    list.reduce((sum, s) => sum + s.total_cost, 0),
+        physicalServers: Array.from(psMap.entries()).map(([ps, servers]) => ({
+          name:         ps,
+          vmCount:      servers.length,
+          cpu:          servers.reduce((sum, s) => sum + s.cpu, 0),
+          ram:          servers.reduce((sum, s) => sum + s.ram, 0),
+          storage:      servers.reduce((sum, s) => sum + s.storage, 0),
+          cost:         servers.reduce((sum, s) => sum + s.total_cost, 0),
+          environments: Array.from(new Set(servers.map(s => s.environment))),
+        })).sort((a, b) => b.vmCount - a.vmCount),
+      }
+    }).sort((a, b) => b.totalVMs - a.totalVMs),
+  [projectGroups])
+
   const filteredProjectList = useMemo(() => {
     const q = projectFilter.trim().toLowerCase()
     if (!q) return projectList
@@ -222,10 +247,11 @@ export default function Dashboard() {
   const totalCost = useMemo(() => allServers.reduce((s, r) => s + r.total_cost, 0), [allServers])
 
   const tabs: { id: Tab; label: string; icon: React.ReactNode }[] = [
-    { id: 'servers',      label: 'All Servers',  icon: <ServerStackIcon   className="h-4 w-4" /> },
-    { id: 'cost',         label: 'Cost Report',  icon: <CurrencyDollarIcon className="h-4 w-4" /> },
-    { id: 'resources',    label: 'CPU & RAM',    icon: <CpuChipIcon        className="h-4 w-4" /> },
-    { id: 'project-list', label: 'By Project',   icon: <FolderOpenIcon     className="h-4 w-4" /> },
+    { id: 'servers',         label: 'All Servers',     icon: <ServerStackIcon    className="h-4 w-4" /> },
+    { id: 'cost',            label: 'Cost Report',     icon: <CurrencyDollarIcon  className="h-4 w-4" /> },
+    { id: 'resources',       label: 'CPU & RAM',       icon: <CpuChipIcon         className="h-4 w-4" /> },
+    { id: 'project-list',    label: 'By Project',      icon: <FolderOpenIcon      className="h-4 w-4" /> },
+    { id: 'physical-server', label: 'Physical Servers', icon: <ServerIcon          className="h-4 w-4" /> },
   ]
 
   const initialLoading = reportsLoading && tableLoading
@@ -655,6 +681,113 @@ export default function Dashboard() {
                   ? `No projects match "${projectFilter}"`
                   : 'No projects found.'
               } />
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Physical Server Report ── */}
+      {activeTab === 'physical-server' && (
+        <div className="space-y-5">
+          {/* Summary bar */}
+          <div className="flex items-center justify-between">
+            <p className="text-sm text-slate-500">
+              <span className="font-semibold text-slate-800">{physicalServerReport.length}</span> project{physicalServerReport.length !== 1 ? 's' : ''} ·{' '}
+              <span className="font-semibold text-slate-800">
+                {Array.from(new Set(allServers.map(s => s.physical_server))).length}
+              </span> unique physical server{Array.from(new Set(allServers.map(s => s.physical_server))).length !== 1 ? 's' : ''} in use
+            </p>
+          </div>
+
+          {physicalServerReport.map(group => (
+            <div key={group.project} className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
+              {/* Project header */}
+              <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex items-center justify-between">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-white truncate">{group.project}</h3>
+                  {group.purpose && <p className="text-xs text-slate-400 mt-0.5 truncate">{group.purpose}</p>}
+                </div>
+                <div className="flex items-center gap-2 shrink-0 ml-4">
+                  <span className="text-xs font-semibold bg-blue-600 text-white px-3 py-1 rounded-full">
+                    {group.totalVMs} VM{group.totalVMs !== 1 ? 's' : ''}
+                  </span>
+                  <span className="text-xs font-semibold bg-slate-600 text-slate-200 px-3 py-1 rounded-full">
+                    {group.physicalServers.length} host{group.physicalServers.length !== 1 ? 's' : ''}
+                  </span>
+                  <span className="text-xs font-semibold bg-emerald-600 text-white px-3 py-1 rounded-full">
+                    ${group.totalCost.toFixed(2)}
+                  </span>
+                </div>
+              </div>
+
+              {/* Per-physical-server breakdown */}
+              <div className="overflow-x-auto">
+                <table className="min-w-full">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">Physical Server</th>
+                      <th className="px-5 py-3 text-left  text-xs font-semibold text-slate-500 uppercase tracking-wider">Environments</th>
+                      <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">VMs</th>
+                      <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">CPU</th>
+                      <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">RAM</th>
+                      <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Storage</th>
+                      <th className="px-5 py-3 text-right text-xs font-semibold text-slate-500 uppercase tracking-wider">Cost</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {group.physicalServers.map(ps => (
+                      <tr key={ps.name} className="hover:bg-slate-50 transition-colors">
+                        <td className="px-5 py-3.5">
+                          <div className="flex items-center gap-2">
+                            <div className="flex items-center justify-center h-7 w-7 rounded-lg bg-slate-100 shrink-0">
+                              <ServerIcon className="h-3.5 w-3.5 text-slate-500" />
+                            </div>
+                            <span className="text-sm font-semibold text-slate-900">{ps.name}</span>
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <div className="flex flex-wrap gap-1">
+                            {ps.environments.map(env => (
+                              <span key={env} className={`inline-flex px-2 py-0.5 text-xs font-semibold rounded-full ${envStyle(env)}`}>
+                                {env}
+                              </span>
+                            ))}
+                          </div>
+                        </td>
+                        <td className="px-5 py-3.5 text-sm font-semibold text-slate-900 text-right">{ps.vmCount}</td>
+                        <td className="px-5 py-3.5 text-sm text-slate-700 text-right">{ps.cpu} cores</td>
+                        <td className="px-5 py-3.5 text-sm text-slate-700 text-right">{ps.ram} GB</td>
+                        <td className="px-5 py-3.5 text-sm text-slate-700 text-right">{ps.storage} GB</td>
+                        <td className="px-5 py-3.5 text-sm font-semibold text-slate-900 text-right">${ps.cost.toFixed(2)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-50 border-t-2 border-slate-200">
+                      <td className="px-5 py-2.5 text-xs font-bold text-slate-600" colSpan={2}>Project Total</td>
+                      <td className="px-5 py-2.5 text-xs font-bold text-slate-900 text-right">{group.totalVMs}</td>
+                      <td className="px-5 py-2.5 text-xs font-bold text-blue-700 text-right">
+                        {group.physicalServers.reduce((s, r) => s + r.cpu, 0)} cores
+                      </td>
+                      <td className="px-5 py-2.5 text-xs font-bold text-blue-700 text-right">
+                        {group.physicalServers.reduce((s, r) => s + r.ram, 0)} GB
+                      </td>
+                      <td className="px-5 py-2.5 text-xs font-bold text-blue-700 text-right">
+                        {group.physicalServers.reduce((s, r) => s + r.storage, 0)} GB
+                      </td>
+                      <td className="px-5 py-2.5 text-xs font-bold text-emerald-700 text-right">
+                        ${group.totalCost.toFixed(2)}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          ))}
+
+          {physicalServerReport.length === 0 && (
+            <div className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200">
+              <EmptyState message="No server data available." />
             </div>
           )}
         </div>
