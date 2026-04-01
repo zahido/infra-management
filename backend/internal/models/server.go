@@ -30,6 +30,18 @@ type Server struct {
 	UpdatedAt    time.Time          `json:"updated_at" bson:"updated_at"`
 }
 
+type Environment struct {
+	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
+	Name      string             `json:"name" bson:"name" binding:"required"`
+	CreatedAt time.Time          `json:"created_at" bson:"created_at"`
+}
+
+type PhysicalServer struct {
+	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
+	Name      string             `json:"name" bson:"name" binding:"required"`
+	CreatedAt time.Time          `json:"created_at" bson:"created_at"`
+}
+
 type User struct {
 	ID        primitive.ObjectID `json:"id" bson:"_id,omitempty"`
 	Username  string             `json:"username" bson:"username" binding:"required"`

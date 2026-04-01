@@ -1,10 +1,10 @@
 'use client'
 
 import { ReactNode, useState, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
 import { getUserData, removeAuthToken } from '@/lib/auth'
 import toast from 'react-hot-toast'
-import { ServerStackIcon, ArrowRightStartOnRectangleIcon } from '@heroicons/react/24/outline'
+import { ServerStackIcon, ArrowRightStartOnRectangleIcon, Cog6ToothIcon } from '@heroicons/react/24/outline'
 
 interface LayoutProps {
   children: ReactNode
@@ -12,6 +12,7 @@ interface LayoutProps {
 
 export default function Layout({ children }: LayoutProps) {
   const router = useRouter()
+  const pathname = usePathname()
   const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
@@ -58,6 +59,21 @@ export default function Layout({ children }: LayoutProps) {
                   <p className="text-slate-400 text-xs leading-tight">Administrator</p>
                 </div>
               </div>
+
+              <div className="h-6 w-px bg-slate-600" />
+
+              <button
+                onClick={() => router.push(pathname === '/settings' ? '/dashboard' : '/settings')}
+                className={`flex items-center gap-1.5 text-sm font-medium transition-colors px-2 py-1.5 rounded-lg ${
+                  pathname === '/settings'
+                    ? 'text-white bg-white/20'
+                    : 'text-slate-300 hover:text-white hover:bg-white/10'
+                }`}
+                title="Settings"
+              >
+                <Cog6ToothIcon className="h-4 w-4" />
+                <span className="hidden sm:inline">Settings</span>
+              </button>
 
               <div className="h-6 w-px bg-slate-600" />
 

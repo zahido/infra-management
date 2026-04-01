@@ -41,12 +41,6 @@ type Tab = 'servers' | 'cost' | 'resources' | 'project-list'
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const
 
-const PHYSICAL_SERVER_OPTIONS = [
-  'ESXI-06', 'ESXI-07', 'ESXI-08', 'ESXI-09', 'ESXI-10',
-  'ESXI-11', 'ESXI-12', 'ESXI-13', 'ESXI-14',
-  'ESXI-56.101', 'ESXI-56.102',
-  'PROXMOX-16', 'PROXMOX-17', 'PROXMOX-18', 'PROXMOX-19',
-]
 
 const ENV_STYLES: Record<string, string> = {
   Production: 'bg-red-100 text-red-700 ring-1 ring-red-200',
@@ -916,6 +910,31 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
   const [copied, setCopied]               = useState(false)
   const [touched, setTouched]             = useState<Record<string, boolean>>({})
   const [submitAttempted, setSubmitAttempted] = useState(false)
+  const [environments, setEnvironments]   = useState<string[]>([])
+  const [physicalServers, setPhysicalServers] = useState<string[]>([])
+  const [optionsLoading, setOptionsLoading] = useState(true)
+
+  useEffect(() => {
+    let cancelled = false
+    const fetchOptions = async () => {
+      try {
+        const [envRes, psRes] = await Promise.all([
+          api.get('/api/environments'),
+          api.get('/api/physical-servers'),
+        ])
+        if (!cancelled) {
+          setEnvironments((envRes.data.environments || []).map((e: { name: string }) => e.name))
+          setPhysicalServers((psRes.data.physical_servers || []).map((p: { name: string }) => p.name))
+        }
+      } catch {
+        if (!cancelled) toast.error('Failed to load dropdown options')
+      } finally {
+        if (!cancelled) setOptionsLoading(false)
+      }
+    }
+    fetchOptions()
+    return () => { cancelled = true }
+  }, [])
 
   const validate = (data: typeof formData) => {
     const e: Record<string, string> = {}
@@ -1033,19 +1052,21 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
                 <Field label="Environment" required error={fieldError('environment')}>
                   <select name="environment" value={formData.environment}
                     onChange={handleChange} onBlur={() => handleBlur('environment')}
-                    className={inputClass('environment')}>
-                    <option value="">Select Environment</option>
-                    <option value="Development">Development</option>
-                    <option value="Staging">Staging</option>
-                    <option value="Production">Production</option>
+                    className={inputClass('environment')}
+                    disabled={optionsLoading}>
+                    <option value="">{optionsLoading ? 'Loading...' : 'Select Environment'}</option>
+                    {environments.map(opt => (
+                      <option key={opt} value={opt}>{opt}</option>
+                    ))}
                   </select>
                 </Field>
                 <Field label="Physical Server" required error={fieldError('physical_server')}>
                   <select name="physical_server" value={formData.physical_server}
                     onChange={handleChange} onBlur={() => handleBlur('physical_server')}
-                    className={inputClass('physical_server')}>
-                    <option value="">Select Physical Server</option>
-                    {PHYSICAL_SERVER_OPTIONS.map(opt => (
+                    className={inputClass('physical_server')}
+                    disabled={optionsLoading}>
+                    <option value="">{optionsLoading ? 'Loading...' : 'Select Physical Server'}</option>
+                    {physicalServers.map(opt => (
                       <option key={opt} value={opt}>{opt}</option>
                     ))}
                   </select>
