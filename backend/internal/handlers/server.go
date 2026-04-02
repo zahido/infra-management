@@ -23,6 +23,7 @@ func CreateServer(c *gin.Context) {
 		return
 	}
 
+	server.CreatedBy = c.GetString("username")
 	server.CreatedAt = time.Now()
 	server.UpdatedAt = time.Now()
 
@@ -217,6 +218,7 @@ func UpdateServer(c *gin.Context) {
 		return
 	}
 
+	server.CreatedBy = before.CreatedBy
 	server.UpdatedAt = time.Now()
 
 	result, err := collection.UpdateOne(

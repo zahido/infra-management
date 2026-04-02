@@ -60,6 +60,13 @@ func main() {
 		auth.POST("/login", handlers.Login)
 	}
 
+	// Protected auth routes
+	authProtected := r.Group("/api/auth")
+	authProtected.Use(middleware.AuthMiddleware())
+	{
+		authProtected.POST("/change-password", handlers.ChangePassword)
+	}
+
 	// Protected routes
 	api := r.Group("/api")
 	api.Use(middleware.AuthMiddleware())

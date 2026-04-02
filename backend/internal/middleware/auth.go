@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -36,8 +37,8 @@ func AuthMiddleware() gin.HandlerFunc {
 		}
 
 		if claims, ok := token.Claims.(jwt.MapClaims); ok {
-			c.Set("user_id", claims["user_id"])
-			c.Set("username", claims["username"])
+			c.Set("user_id", fmt.Sprintf("%v", claims["user_id"]))
+			c.Set("username", fmt.Sprintf("%v", claims["username"]))
 		}
 
 		c.Next()

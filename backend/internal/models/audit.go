@@ -12,15 +12,24 @@ const (
 	ActionLogin        = "LOGIN"
 	ActionLoginFailed  = "LOGIN_FAILED"
 	ActionRegister     = "REGISTER"
-	ActionServerCreate = "SERVER_CREATE"
-	ActionServerUpdate = "SERVER_UPDATE"
-	ActionServerDelete = "SERVER_DELETE"
+	ActionServerCreate         = "SERVER_CREATE"
+	ActionServerUpdate         = "SERVER_UPDATE"
+	ActionServerDelete         = "SERVER_DELETE"
+	ActionPasswordChange       = "PASSWORD_CHANGE"
+	ActionEnvironmentCreate    = "ENVIRONMENT_CREATE"
+	ActionEnvironmentUpdate    = "ENVIRONMENT_UPDATE"
+	ActionEnvironmentDelete    = "ENVIRONMENT_DELETE"
+	ActionPhysicalServerCreate = "PHYSICAL_SERVER_CREATE"
+	ActionPhysicalServerUpdate = "PHYSICAL_SERVER_UPDATE"
+	ActionPhysicalServerDelete = "PHYSICAL_SERVER_DELETE"
 )
 
 // Resource constants
 const (
-	ResourceAuth   = "AUTH"
-	ResourceServer = "SERVER"
+	ResourceAuth           = "AUTH"
+	ResourceServer         = "SERVER"
+	ResourceEnvironment    = "ENVIRONMENT"
+	ResourcePhysicalServer = "PHYSICAL_SERVER"
 )
 
 // Status constants

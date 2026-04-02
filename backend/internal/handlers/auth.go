@@ -156,6 +156,79 @@ func Login(c *gin.Context) {
 	})
 }
 
+func ChangePassword(c *gin.Context) {
+	var req struct {
+		CurrentPassword string `json:"current_password" binding:"required"`
+		NewPassword     string `json:"new_password"     binding:"required,min=6"`
+		ConfirmPassword string `json:"confirm_password" binding:"required"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if req.NewPassword != req.ConfirmPassword {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "New passwords do not match"})
+		return
+	}
+
+	userID, err := primitive.ObjectIDFromHex(c.GetString("user_id"))
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid session"})
+		return
+	}
+
+	collection := database.DB.Collection("users")
+	var user models.User
+	if err := collection.FindOne(context.Background(), bson.M{"_id": userID}).Decode(&user); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	if err := bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(req.CurrentPassword)); err != nil {
+		audit.Log(audit.Entry{
+			UserID:    user.ID.Hex(),
+			Username:  user.Username,
+			Action:    models.ActionPasswordChange,
+			Resource:  models.ResourceAuth,
+			Details:   bson.M{"reason": "wrong current password"},
+			IPAddress: clientIP(c),
+			UserAgent: c.GetHeader("User-Agent"),
+			Status:    models.AuditStatusFailure,
+		})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Current password is incorrect"})
+		return
+	}
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte(req.NewPassword), bcrypt.DefaultCost)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
+		return
+	}
+
+	_, err = collection.UpdateOne(
+		context.Background(),
+		bson.M{"_id": userID},
+		bson.M{"$set": bson.M{"password": string(hashed), "updated_at": time.Now()}},
+	)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update password"})
+		return
+	}
+
+	audit.Log(audit.Entry{
+		UserID:    user.ID.Hex(),
+		Username:  user.Username,
+		Action:    models.ActionPasswordChange,
+		Resource:  models.ResourceAuth,
+		IPAddress: clientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		Status:    models.AuditStatusSuccess,
+	})
+
+	c.JSON(http.StatusOK, gin.H{"message": "Password changed successfully"})
+}
+
 // clientIP extracts the real client IP, honouring X-Forwarded-For / X-Real-IP
 // headers set by reverse proxies before falling back to RemoteAddr.
 func clientIP(c *gin.Context) string {

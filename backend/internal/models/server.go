@@ -23,7 +23,7 @@ type Server struct {
 	Username     string             `json:"username" bson:"username" binding:"required"`
 	Password     string             `json:"password" bson:"password" binding:"required"`
 	ServerNo     string             `json:"server_no" bson:"server_no" binding:"required"`
-	CreatedBy    string             `json:"created_by" bson:"created_by" binding:"required"`
+	CreatedBy    string             `json:"created_by" bson:"created_by"`
 	Remarks      string             `json:"remarks" bson:"remarks"`
 	DeleteDate   *time.Time         `json:"delete_date" bson:"delete_date"`
 	CreatedAt    time.Time          `json:"created_at" bson:"created_at"`

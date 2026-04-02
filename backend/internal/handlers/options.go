@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"server-management/internal/audit"
 	"server-management/internal/database"
 	"server-management/internal/models"
 
@@ -81,6 +82,19 @@ func CreateEnvironment(c *gin.Context) {
 		return
 	}
 	env.ID = result.InsertedID.(primitive.ObjectID)
+
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionEnvironmentCreate,
+		Resource:   models.ResourceEnvironment,
+		ResourceID: env.ID.Hex(),
+		Details:    bson.M{"name": env.Name},
+		IPAddress:  clientIP(c),
+		UserAgent:  c.GetHeader("User-Agent"),
+		Status:     models.AuditStatusSuccess,
+	})
+
 	c.JSON(http.StatusCreated, env)
 }
 
@@ -154,6 +168,22 @@ func UpdateEnvironment(c *gin.Context) {
 		serversUpdated = cascadeResult.ModifiedCount
 	}
 
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionEnvironmentUpdate,
+		Resource:   models.ResourceEnvironment,
+		ResourceID: id,
+		Details: bson.M{
+			"old_name":        existing.Name,
+			"new_name":        body.Name,
+			"servers_updated": serversUpdated,
+		},
+		IPAddress: clientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		Status:    models.AuditStatusSuccess,
+	})
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":              id,
 		"name":            body.Name,
@@ -204,6 +234,19 @@ func DeleteEnvironment(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Environment not found"})
 		return
 	}
+
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionEnvironmentDelete,
+		Resource:   models.ResourceEnvironment,
+		ResourceID: id,
+		Details:    bson.M{"name": env.Name},
+		IPAddress:  clientIP(c),
+		UserAgent:  c.GetHeader("User-Agent"),
+		Status:     models.AuditStatusSuccess,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"message": "Environment deleted"})
 }
 
@@ -262,6 +305,19 @@ func CreatePhysicalServer(c *gin.Context) {
 		return
 	}
 	ps.ID = result.InsertedID.(primitive.ObjectID)
+
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionPhysicalServerCreate,
+		Resource:   models.ResourcePhysicalServer,
+		ResourceID: ps.ID.Hex(),
+		Details:    bson.M{"name": ps.Name},
+		IPAddress:  clientIP(c),
+		UserAgent:  c.GetHeader("User-Agent"),
+		Status:     models.AuditStatusSuccess,
+	})
+
 	c.JSON(http.StatusCreated, ps)
 }
 
@@ -335,6 +391,22 @@ func UpdatePhysicalServer(c *gin.Context) {
 		serversUpdated = cascadeResult.ModifiedCount
 	}
 
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionPhysicalServerUpdate,
+		Resource:   models.ResourcePhysicalServer,
+		ResourceID: id,
+		Details: bson.M{
+			"old_name":        existing.Name,
+			"new_name":        body.Name,
+			"servers_updated": serversUpdated,
+		},
+		IPAddress: clientIP(c),
+		UserAgent: c.GetHeader("User-Agent"),
+		Status:    models.AuditStatusSuccess,
+	})
+
 	c.JSON(http.StatusOK, gin.H{
 		"id":              id,
 		"name":            body.Name,
@@ -385,5 +457,18 @@ func DeletePhysicalServer(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Physical server not found"})
 		return
 	}
+
+	audit.Log(audit.Entry{
+		UserID:     c.GetString("user_id"),
+		Username:   c.GetString("username"),
+		Action:     models.ActionPhysicalServerDelete,
+		Resource:   models.ResourcePhysicalServer,
+		ResourceID: id,
+		Details:    bson.M{"name": ps.Name},
+		IPAddress:  clientIP(c),
+		UserAgent:  c.GetHeader("User-Agent"),
+		Status:     models.AuditStatusSuccess,
+	})
+
 	c.JSON(http.StatusOK, gin.H{"message": "Physical server deleted"})
 }

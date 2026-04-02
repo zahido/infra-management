@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import Layout from '@/components/Layout'
-import { isAuthenticated } from '@/lib/auth'
+import { isAuthenticated, getUserData } from '@/lib/auth'
 import api from '@/lib/api'
 import toast from 'react-hot-toast'
 import {
@@ -1049,7 +1049,7 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
     total_cost:   server?.total_cost   || 0,  os_version: server?.os_version || '',
     ip:           server?.ip           || '', hostname: server?.hostname || '',
     username:     server?.username     || '', password: server?.password || '',
-    server_no:    server?.server_no    || '', created_by: server?.created_by || '',
+    server_no:    server?.server_no    || '', created_by: server?.created_by || getUserData()?.username || '',
     remarks:      server?.remarks      || '',
   }
   const [formData, setFormData]           = useState(initialData)
@@ -1101,7 +1101,6 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
     if (!data.username.trim())       e.username       = 'Username is required'
     if (!data.password.trim())       e.password       = 'Password is required'
     if (!data.server_no.trim())      e.server_no      = 'Server number is required'
-    if (!data.created_by.trim())     e.created_by     = 'Created by is required'
     return e
   }
 
@@ -1151,10 +1150,13 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
   }
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    const { name, value } = e.target
+    // data-field overrides name so credential fields can use non-standard name= values
+    // that prevent the browser password manager from triggering
+    const key   = e.target.dataset.field ?? e.target.name
+    const value = e.target.value
     setFormData(p => ({
       ...p,
-      [name]: ['cpu','ram','storage','total_cost'].includes(name) ? Number(value) : value,
+      [key]: ['cpu','ram','storage','total_cost'].includes(key) ? Number(value) : value,
     }))
   }
 
@@ -1181,7 +1183,7 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
           </div>
         </div>
 
-        <form onSubmit={handleSubmit} noValidate>
+        <form onSubmit={handleSubmit} noValidate autoComplete="off">
           <div className="px-6 py-6 space-y-7 max-h-[68vh] overflow-y-auto">
 
             <div>
@@ -1276,11 +1278,11 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
                   <input type="text" name="hostname" value={formData.hostname} onChange={handleChange} onBlur={() => handleBlur('hostname')} placeholder="e.g. server01.example.com" className={inputClass('hostname')} />
                 </Field>
                 <Field label="Username" required error={fieldError('username')}>
-                  <input type="text" name="username" value={formData.username} onChange={handleChange} onBlur={() => handleBlur('username')} placeholder="e.g. admin" autoComplete="off" className={inputClass('username')} />
+                  <input type="text" name="srv_uname" data-field="username" value={formData.username} onChange={handleChange} onBlur={() => handleBlur('username')} placeholder="e.g. admin" autoComplete="off" className={inputClass('username')} />
                 </Field>
                 <Field label="Password" required error={fieldError('password')}>
                   <div className="relative mt-1">
-                    <input type={showPassword ? 'text' : 'password'} name="password" value={formData.password}
+                    <input type={showPassword ? 'text' : 'password'} name="srv_cred" data-field="password" value={formData.password}
                       onChange={handleChange} onBlur={() => handleBlur('password')}
                       autoComplete="new-password" placeholder="Enter password"
                       className={`block w-full rounded-lg px-3 py-2.5 text-sm border pr-10 focus:outline-none focus:ring-2 transition-colors ${
@@ -1308,8 +1310,9 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
                 <Field label="Server No" required error={fieldError('server_no')}>
                   <input type="text" name="server_no" value={formData.server_no} onChange={handleChange} onBlur={() => handleBlur('server_no')} placeholder="e.g. SRV-001" className={inputClass('server_no')} />
                 </Field>
-                <Field label="Created By" required error={fieldError('created_by')}>
-                  <input type="text" name="created_by" value={formData.created_by} onChange={handleChange} onBlur={() => handleBlur('created_by')} placeholder="e.g. John Doe" className={inputClass('created_by')} />
+                <Field label="Created By" error={null}>
+                  <input type="text" name="created_by" value={formData.created_by} readOnly
+                    className="mt-1 block w-full rounded-lg px-3 py-2.5 text-sm border border-slate-200 bg-slate-50 text-slate-500 cursor-not-allowed" />
                 </Field>
                 <div className="md:col-span-2">
                   <label className="block text-sm font-medium text-slate-700">Remarks</label>
