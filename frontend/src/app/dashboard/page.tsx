@@ -11,6 +11,7 @@ import {
   MagnifyingGlassIcon, CurrencyDollarIcon, CpuChipIcon, ServerStackIcon, XMarkIcon,
   ClipboardDocumentIcon, CheckIcon, ExclamationCircleIcon, FolderOpenIcon,
   CircleStackIcon, ChevronLeftIcon, ChevronRightIcon, ExclamationTriangleIcon, ServerIcon,
+  FunnelIcon,
 } from '@heroicons/react/24/outline'
 
 interface Server {
@@ -94,6 +95,10 @@ export default function Dashboard() {
   // ── Filter – By Project tab (client-side, instant) ─────────────────────────
   const [projectFilter, setProjectFilter] = useState('')
 
+  // ── Filter – Physical Server tab ──────────────────────────────────────────
+  const [psFilter, setPsFilter]               = useState('')
+  const [psFilterOptions, setPsFilterOptions] = useState<string[]>([])
+
   // ── UI state ──────────────────────────────────────────────────────────────
   const [showModal, setShowModal]               = useState(false)
   const [editingServer, setEditingServer]       = useState<Server | null>(null)
@@ -105,8 +110,12 @@ export default function Dashboard() {
   // ── Fetch all servers for report tabs (one-shot) ──────────────────────────
   const fetchAllServers = useCallback(async () => {
     try {
-      const res = await api.get('/api/servers?limit=10000')
-      setAllServers(res.data.servers || [])
+      const [serversRes, psRes] = await Promise.all([
+        api.get('/api/servers?limit=10000'),
+        api.get('/api/physical-servers'),
+      ])
+      setAllServers(serversRes.data.servers || [])
+      setPsFilterOptions((psRes.data.physical_servers || []).map((p: { name: string }) => p.name).sort())
     } catch {
       toast.error('Failed to load server data')
     } finally {
@@ -237,6 +246,22 @@ export default function Dashboard() {
       }
     }).sort((a, b) => b.totalVMs - a.totalVMs),
   [projectGroups])
+
+  const filteredPhysicalServerReport = useMemo(() => {
+    if (!psFilter) return physicalServerReport
+    return physicalServerReport
+      .map(group => {
+        const matched = group.physicalServers.filter(ps => ps.name === psFilter)
+        if (matched.length === 0) return null
+        return {
+          ...group,
+          physicalServers: matched,
+          totalVMs:  matched.reduce((s, ps) => s + ps.vmCount, 0),
+          totalCost: matched.reduce((s, ps) => s + ps.cost,   0),
+        }
+      })
+      .filter(Boolean) as typeof physicalServerReport
+  }, [physicalServerReport, psFilter])
 
   const filteredProjectList = useMemo(() => {
     const q = projectFilter.trim().toLowerCase()
@@ -689,17 +714,58 @@ export default function Dashboard() {
       {/* ── Physical Server Report ── */}
       {activeTab === 'physical-server' && (
         <div className="space-y-5">
-          {/* Summary bar */}
-          <div className="flex items-center justify-between">
+
+          {/* Toolbar: filter dropdown + summary */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+
+            {/* Dropdown filter */}
+            <div className="flex items-center gap-2">
+              <div className="relative">
+                <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+                  <FunnelIcon className={`h-4 w-4 ${psFilter ? 'text-blue-500' : 'text-slate-400'}`} />
+                </div>
+                <select
+                  value={psFilter}
+                  onChange={e => setPsFilter(e.target.value)}
+                  className={`pl-9 pr-8 py-2.5 text-sm rounded-xl border shadow-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-400 transition-all appearance-none cursor-pointer ${
+                    psFilter
+                      ? 'border-blue-400 text-blue-700 font-medium ring-1 ring-blue-200'
+                      : 'border-slate-200 text-slate-700'
+                  }`}
+                >
+                  <option value="">All Physical Servers</option>
+                  {psFilterOptions.map(opt => (
+                    <option key={opt} value={opt}>{opt}</option>
+                  ))}
+                </select>
+                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center pr-2.5">
+                  <svg className="h-4 w-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
+                </div>
+              </div>
+              {psFilter && (
+                <button
+                  onClick={() => setPsFilter('')}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 transition-colors"
+                >
+                  <XMarkIcon className="h-3.5 w-3.5" />
+                  Clear
+                </button>
+              )}
+            </div>
+
+            {/* Summary */}
             <p className="text-sm text-slate-500">
-              <span className="font-semibold text-slate-800">{physicalServerReport.length}</span> project{physicalServerReport.length !== 1 ? 's' : ''} ·{' '}
-              <span className="font-semibold text-slate-800">
-                {Array.from(new Set(allServers.map(s => s.physical_server))).length}
-              </span> unique physical server{Array.from(new Set(allServers.map(s => s.physical_server))).length !== 1 ? 's' : ''} in use
+              <span className="font-semibold text-slate-800">{filteredPhysicalServerReport.length}</span> project{filteredPhysicalServerReport.length !== 1 ? 's' : ''}
+              {psFilter
+                ? <> · filtered by <span className="font-semibold text-blue-700">{psFilter}</span></>
+                : <> · <span className="font-semibold text-slate-800">{psFilterOptions.length}</span> physical server{psFilterOptions.length !== 1 ? 's' : ''} in use</>
+              }
             </p>
           </div>
 
-          {physicalServerReport.map(group => (
+          {filteredPhysicalServerReport.map(group => (
             <div key={group.project} className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200 overflow-hidden">
               {/* Project header */}
               <div className="px-6 py-4 bg-gradient-to-r from-slate-800 to-slate-700 flex items-center justify-between">
@@ -785,9 +851,9 @@ export default function Dashboard() {
             </div>
           ))}
 
-          {physicalServerReport.length === 0 && (
+          {filteredPhysicalServerReport.length === 0 && (
             <div className="bg-white rounded-2xl shadow-sm ring-1 ring-slate-200">
-              <EmptyState message="No server data available." />
+              <EmptyState message={psFilter ? `No projects found on "${psFilter}".` : 'No server data available.'} />
             </div>
           )}
         </div>
