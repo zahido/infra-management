@@ -1278,13 +1278,14 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
                   <input type="text" name="hostname" value={formData.hostname} onChange={handleChange} onBlur={() => handleBlur('hostname')} placeholder="e.g. server01.example.com" className={inputClass('hostname')} />
                 </Field>
                 <Field label="Username" required error={fieldError('username')}>
-                  <input type="text" name="srv_uname" data-field="username" value={formData.username} onChange={handleChange} onBlur={() => handleBlur('username')} placeholder="e.g. admin" autoComplete="off" className={inputClass('username')} />
+                  <input type="text" name="srv_uname" data-field="username" value={formData.username} onChange={handleChange} onBlur={() => handleBlur('username')} placeholder="e.g. admin" autoComplete="new-password" className={inputClass('username')} />
                 </Field>
                 <Field label="Password" required error={fieldError('password')}>
                   <div className="relative mt-1">
-                    <input type={showPassword ? 'text' : 'password'} name="srv_cred" data-field="password" value={formData.password}
+                    <input type="text" name="srv_cred" data-field="password" value={formData.password}
                       onChange={handleChange} onBlur={() => handleBlur('password')}
-                      autoComplete="new-password" placeholder="Enter password"
+                      autoComplete="off" placeholder="Enter password"
+                      style={showPassword ? undefined : { WebkitTextSecurity: 'disc' } as React.CSSProperties}
                       className={`block w-full rounded-lg px-3 py-2.5 text-sm border pr-10 focus:outline-none focus:ring-2 transition-colors ${
                         fieldError('password') ? 'border-red-400 focus:ring-red-300 bg-red-50' : 'border-slate-200 focus:ring-blue-500 focus:border-blue-400 bg-white'
                       }`} />
