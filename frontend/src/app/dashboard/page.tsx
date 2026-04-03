@@ -1185,9 +1185,23 @@ function ServerModal({ server, onClose, onSave }: ServerModalProps) {
 
   const handleCopyCredentials = () => {
     const text = `IP Address: ${formData.ip}\nHostname: ${formData.hostname}\nUsername: ${formData.username}\nPassword: ${formData.password}`
-    navigator.clipboard.writeText(text).then(() => {
-      setCopied(true); setTimeout(() => setCopied(false), 2000)
-    })
+    if (navigator.clipboard?.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true); setTimeout(() => setCopied(false), 2000)
+      })
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.focus()
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    }
   }
 
   const vmName     = buildVmName(formData)
