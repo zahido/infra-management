@@ -60,6 +60,13 @@ func main() {
 		auth.POST("/login", handlers.Login)
 	}
 
+	// Protected auth routes
+	authProtected := r.Group("/api/auth")
+	authProtected.Use(middleware.AuthMiddleware())
+	{
+		authProtected.POST("/change-password", handlers.ChangePassword)
+	}
+
 	// Protected routes
 	api := r.Group("/api")
 	api.Use(middleware.AuthMiddleware())
@@ -72,6 +79,34 @@ func main() {
 			servers.GET("/:id", handlers.GetServer)
 			servers.PUT("/:id", handlers.UpdateServer)
 			servers.DELETE("/:id", handlers.DeleteServer)
+		}
+
+		// Project routes
+		api.GET("/projects", handlers.GetProjects)
+
+		// Environment options
+		envRoutes := api.Group("/environments")
+		{
+			envRoutes.GET("", handlers.GetEnvironments)
+			envRoutes.POST("", handlers.CreateEnvironment)
+			envRoutes.PUT("/:id", handlers.UpdateEnvironment)
+			envRoutes.DELETE("/:id", handlers.DeleteEnvironment)
+		}
+
+		// Physical server options
+		psRoutes := api.Group("/physical-servers")
+		{
+			psRoutes.GET("", handlers.GetPhysicalServers)
+			psRoutes.POST("", handlers.CreatePhysicalServer)
+			psRoutes.PUT("/:id", handlers.UpdatePhysicalServer)
+			psRoutes.DELETE("/:id", handlers.DeletePhysicalServer)
+		}
+
+		// Audit log routes
+		auditRoutes := api.Group("/audit")
+		{
+			auditRoutes.GET("/logs", handlers.GetAuditLogs)
+			auditRoutes.GET("/stats", handlers.GetAuditStats)
 		}
 	}
 
