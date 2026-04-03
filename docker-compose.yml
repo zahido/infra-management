@@ -39,9 +39,13 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      target: runner
+      args:
+        - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     container_name: server-mgmt-frontend
     restart: unless-stopped
     environment:
+      - NODE_ENV=${NODE_ENV}
       - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
     depends_on:
       - backend

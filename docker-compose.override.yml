@@ -13,6 +13,7 @@ services:
       - ./frontend/postcss.config.js:/app/postcss.config.js:ro
     environment:
       - NODE_ENV=development
+      - NEXT_PUBLIC_API_URL=${NEXT_PUBLIC_API_URL}
       - WATCHPACK_POLLING=true
       - NEXT_TELEMETRY_DISABLED=1
       - HOST=0.0.0.0
