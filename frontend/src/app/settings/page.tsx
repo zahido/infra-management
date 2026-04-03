@@ -17,6 +17,7 @@ import {
   ServerIcon,
   CheckCircleIcon,
   ArrowLeftIcon,
+  MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline'
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -116,7 +117,12 @@ function OptionsCard({
   const [deleteTarget, setDeleteTarget]   = useState<OptionItem | null>(null)
   const [deleting, setDeleting]           = useState(false)
   const [deleteError, setDeleteError]     = useState<{ message: string; serversCount: number } | null>(null)
+  const [searchQuery, setSearchQuery]     = useState('')
   const editInputRef = useRef<HTMLInputElement>(null)
+
+  const filteredItems = searchQuery.trim()
+    ? items.filter(i => i.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    : items
 
   const colors = {
     emerald: {
@@ -320,6 +326,30 @@ function OptionsCard({
           </form>
         </div>
 
+        {/* Search Filter */}
+        {!loading && items.length > 0 && (
+          <div className="px-5 py-3 border-b border-slate-100">
+            <div className="relative">
+              <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder={`Search ${title.toLowerCase()}…`}
+                className={`w-full rounded-xl pl-9 pr-8 py-2 text-sm border border-slate-200 bg-slate-50 text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:border-transparent transition-colors ${colors.editRing}`}
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors"
+                >
+                  <XMarkIcon className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* List */}
         <div className="flex-1 overflow-y-auto max-h-[420px]">
           {loading ? (
@@ -342,9 +372,17 @@ function OptionsCard({
               <p className="text-sm font-medium text-slate-700">No {title.toLowerCase()} yet</p>
               <p className="text-xs text-slate-400 mt-1">Add your first one using the form above.</p>
             </div>
+          ) : filteredItems.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-14 text-center px-4">
+              <div className="h-11 w-11 rounded-full bg-slate-100 flex items-center justify-center mb-3">
+                <MagnifyingGlassIcon className="h-5 w-5 text-slate-400" />
+              </div>
+              <p className="text-sm font-medium text-slate-700">No results for &ldquo;{searchQuery}&rdquo;</p>
+              <p className="text-xs text-slate-400 mt-1">Try a different search term.</p>
+            </div>
           ) : (
             <ul className="divide-y divide-slate-50">
-              {items.map((item, idx) => (
+              {filteredItems.map((item, idx) => (
                 <li key={item.id} className="group">
                   {editingId === item.id ? (
                     /* ── Inline edit row ── */
@@ -436,7 +474,10 @@ function OptionsCard({
           <div className="px-5 py-3 border-t border-slate-100 bg-slate-50">
             <div className="flex items-center gap-1.5 text-xs text-slate-400">
               <CheckCircleIcon className="h-3.5 w-3.5 text-slate-300" />
-              {items.length} {title.toLowerCase()} configured
+              {searchQuery.trim()
+                ? `${filteredItems.length} of ${items.length} ${title.toLowerCase()} match`
+                : `${items.length} ${title.toLowerCase()} configured`
+              }
             </div>
           </div>
         )}
