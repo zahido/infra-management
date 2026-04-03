@@ -294,10 +294,11 @@ export default function Layout({ children }: LayoutProps) {
               <div className="h-6 w-px bg-slate-600" />
 
               <button
-                onClick={() => router.push(pathname === '/settings' ? '/dashboard' : '/settings')}
+                onClick={() => { if (pathname !== '/settings') router.push('/settings'); }}
+                disabled={pathname === '/settings'}
                 className={`flex items-center gap-1.5 text-sm font-medium transition-colors px-2 py-1.5 rounded-lg ${
                   pathname === '/settings'
-                    ? 'text-white bg-white/20'
+                    ? 'text-white bg-white/20 cursor-default'
                     : 'text-slate-300 hover:text-white hover:bg-white/10'
                 }`}
                 title="Settings"
